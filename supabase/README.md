@@ -132,6 +132,33 @@ Join failures use `INVALID_CODE`, `RATE_LIMITED`, `CHALLENGE_CLOSED`,
 Members can read all room expenses/comments including records created before
 they joined. Non-members cannot read room rows or private photos.
 
+## Room nickname uniqueness
+
+Nicknames stay globally non-unique. Inside one room they must differ, because a
+room's posts, comments, and expenses identify their author by nickname alone.
+
+- `update_my_nickname` rejects a nickname already held by another **active**
+  member of any room the caller belongs to, raising `ROOM_NICKNAME_TAKEN`.
+  Comparison ignores case, surrounding whitespace, and Unicode composition.
+- Joining (`join_room`, and `switch_room` through it) never fails on a duplicate.
+  The later arrival's `room_members.nickname_change_required` is set instead,
+  inside the same transaction that locks the room, so concurrent joins settle
+  consistently and only the newcomer is marked.
+- A marked member may not write in that room. Enforcement is a `BEFORE` trigger
+  on the participation tables (expenses, comments, comment reactions/mentions,
+  expense exceptions and approvals, room posts, post comments/reactions/polls),
+  so no RPC — present or future — can bypass it. It raises
+  `NICKNAME_CHANGE_REQUIRED` with SQLSTATE `42501`. `is_active_period_member`
+  carries the same rule so the `expense-photos` upload policy is closed too.
+  Reading, marking read, leaving the room, and editing the profile stay open.
+- The seven-day nickname cooldown still applies. Only a member the server itself
+  sees as marked may change a nickname inside that window; a client-supplied
+  flag is never trusted. A successful change clears the mark and restarts the
+  cooldown from that moment.
+
+`supabase/tests/nickname_uniqueness_test.sql` covers these rules; run it against
+a local stack with `supabase db reset` followed by `psql -f`.
+
 ## Storage
 
 - `expense-photos` is private, 10 MiB. Upload challenge photos to
