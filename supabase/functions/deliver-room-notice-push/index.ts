@@ -1,6 +1,7 @@
 import "@supabase/functions-js/edge-runtime.d.ts";
 
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { withSupabase } from "@supabase/server";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 const expoPushEndpoint = "https://exp.host/--/api/v2/push/send";
 const expoPushBatchSize = 100;
@@ -11,64 +12,57 @@ type RequestBody = { notificationId?: unknown };
 type PushToken = { id: string; token: string };
 type ExpoTicket = { status?: unknown; details?: { error?: unknown } | null };
 
-Deno.serve(async (request) => {
-  if (request.method !== "POST") return Response.json({ error: "method_not_allowed" }, { status: 405 });
-  if (!secretsMatch(request.headers.get("x-room-notice-push-secret"), requiredEnv("ROOM_NOTICE_PUSH_WEBHOOK_SECRET"))) {
-    return Response.json({ error: "unauthorized" }, { status: 401 });
-  }
+export default {
+  fetch: withSupabase({ auth: "secret" }, async (request, ctx) => {
+    if (request.method !== "POST") return Response.json({ error: "method_not_allowed" }, { status: 405 });
 
-  const payload = await request.json().catch(() => null) as RequestBody | null;
-  const notificationId = payload?.notificationId;
-  if (typeof notificationId !== "string" || !uuidPattern.test(notificationId)) {
-    return Response.json({ error: "invalid_request" }, { status: 400 });
-  }
-
-  try {
-    const admin = createAdminClient();
-    const { data: notification, error: notificationError } = await admin
-      .from("notifications")
-      .select("id,user_id,kind,post_id")
-      .eq("id", notificationId)
-      .maybeSingle();
-    if (notificationError) throw notificationError;
-    if (!notification || notification.kind !== "room_notice" || !notification.post_id) {
-      return Response.json({ skipped: true });
+    const payload = await request.json().catch(() => null) as RequestBody | null;
+    const notificationId = payload?.notificationId;
+    if (typeof notificationId !== "string" || !uuidPattern.test(notificationId)) {
+      return Response.json({ error: "invalid_request" }, { status: 400 });
     }
 
-    const [{ data: post, error: postError }, tokens] = await Promise.all([
-      admin
-        .from("room_posts")
-        .select("id,title,body,deleted_at")
-        .eq("id", notification.post_id)
-        .maybeSingle(),
-      findActiveExpoTokens(admin, notification.user_id),
-    ]);
-    if (postError) throw postError;
-    if (!post || post.deleted_at) return Response.json({ skipped: true });
+    try {
+      const admin = ctx.supabaseAdmin;
+      const { data: notification, error: notificationError } = await admin
+        .from("notifications")
+        .select("id,user_id,kind,post_id")
+        .eq("id", notificationId)
+        .maybeSingle();
+      if (notificationError) throw notificationError;
+      if (!notification || notification.kind !== "room_notice" || !notification.post_id) {
+        return Response.json({ skipped: true });
+      }
 
-    const title = typeof post.title === "string" && post.title.trim()
-      ? `공지: ${post.title.trim().slice(0, 100)}`
-      : "새 공지";
-    const invalidTokenIds = await sendExpoMessages(tokens, title, post.body, `/community/${post.id}`);
-    if (invalidTokenIds.length) {
-      const { error } = await admin
-        .from("device_push_tokens")
-        .update({ is_enabled: false })
-        .in("id", invalidTokenIds);
-      if (error) throw error;
+      const [{ data: post, error: postError }, tokens] = await Promise.all([
+        admin
+          .from("room_posts")
+          .select("id,title,body,deleted_at")
+          .eq("id", notification.post_id)
+          .maybeSingle(),
+        findActiveExpoTokens(admin, notification.user_id),
+      ]);
+      if (postError) throw postError;
+      if (!post || post.deleted_at) return Response.json({ skipped: true });
+
+      const title = typeof post.title === "string" && post.title.trim()
+        ? `공지: ${post.title.trim().slice(0, 100)}`
+        : "새 공지";
+      const invalidTokenIds = await sendExpoMessages(tokens, title, post.body, `/community/${post.id}`);
+      if (invalidTokenIds.length) {
+        const { error } = await admin
+          .from("device_push_tokens")
+          .update({ is_enabled: false })
+          .in("id", invalidTokenIds);
+        if (error) throw error;
+      }
+      return Response.json({ delivered: tokens.length, disabled: invalidTokenIds.length });
+    } catch (error) {
+      console.error("room_notice_push_delivery_failed", { type: errorName(error) });
+      return Response.json({ error: "push_delivery_failed" }, { status: 502 });
     }
-    return Response.json({ delivered: tokens.length, disabled: invalidTokenIds.length });
-  } catch (error) {
-    console.error("room_notice_push_delivery_failed", { type: errorName(error) });
-    return Response.json({ error: "push_delivery_failed" }, { status: 502 });
-  }
-});
-
-function createAdminClient(): SupabaseClient {
-  return createClient(requiredEnv("SUPABASE_URL"), requiredEnv("SUPABASE_SERVICE_ROLE_KEY"), {
-    auth: { autoRefreshToken: false, persistSession: false },
-  });
-}
+  }),
+};
 
 async function findActiveExpoTokens(admin: SupabaseClient, userId: string): Promise<PushToken[]> {
   const { data, error } = await admin
@@ -107,19 +101,6 @@ async function sendExpoMessages(tokens: PushToken[], title: string, body: string
     });
   }
   return invalidTokenIds;
-}
-
-function secretsMatch(provided: string | null, expected: string): boolean {
-  if (!provided || provided.length !== expected.length) return false;
-  let difference = 0;
-  for (let index = 0; index < expected.length; index += 1) difference |= provided.charCodeAt(index) ^ expected.charCodeAt(index);
-  return difference === 0;
-}
-
-function requiredEnv(name: string): string {
-  const value = Deno.env.get(name);
-  if (!value) throw new Error(`missing_environment_${name}`);
-  return value;
 }
 
 function errorName(error: unknown): string {

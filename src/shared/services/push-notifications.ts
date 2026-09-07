@@ -29,66 +29,30 @@ export function configurePushNotificationPresentation(): void {
  * 권한을 확인하고 Expo Push Token을 발급해 현재 로그인 계정에 연결한다.
  * 권한 거절은 정상적인 사용자 선택이므로 예외가 아니라 denied로 돌려준다.
  */
-export async function registerPushNotificationsForUser(
-  userId: string,
-): Promise<RegistrationResult> {
+export async function registerPushNotificationsForUser(): Promise<RegistrationResult> {
   if (!supportsPushNotifications()) return 'unsupported';
 
   const permission = await ensurePushPermission();
   if (!permission) return 'denied';
 
   const token = await getExpoPushToken();
-  await syncPushToken(userId, token);
+  await syncPushToken(token);
   return 'registered';
 }
 
 /** 앱이 실행 중 토큰이 교체됐을 때 provider listener가 새 토큰을 즉시 반영한다. */
-export async function syncPushToken(userId: string, token: string): Promise<void> {
+export async function syncPushToken(token: string): Promise<void> {
   if (!supportsPushNotifications()) return;
 
   const deviceId = await getPushDeviceId();
   const client = getSupabaseClient();
-  // 같은 사용자·플랫폼·기기 조합은 한 행만 유지한다. 토큰은 앱 재설치나 APNs 환경
-  // 전환으로 바뀔 수 있으므로 기기를 기준으로 찾아 최신 토큰으로 갱신한다.
-  const { data: existingByDevice, error: deviceReadError } = await client
-    .from('device_push_tokens')
-    .select('id')
-    .eq('user_id', userId)
-    .eq('platform', 'ios')
-    .eq('device_id', deviceId)
-    .maybeSingle();
-  if (deviceReadError) throw deviceReadError;
-
-  const record = {
-    platform: 'ios',
-    device_id: deviceId,
-    token,
-    is_enabled: true,
-    last_seen_at: new Date().toISOString(),
-  };
-
-  if (existingByDevice) {
-    const { error } = await client
-      .from('device_push_tokens')
-      .update(record)
-      .eq('id', existingByDevice.id);
-    if (error) throw error;
-    return;
-  }
-
-  // 기존 앱 버전이 device_id 없이 저장한 현재 토큰은 같은 행을 이어서 쓴다. 따라서
-  // 새 버전이 처음 실행돼도 토큰 행이 불필요하게 하나 더 생기지 않는다.
-  const { data: legacyToken, error: legacyReadError } = await client
-    .from('device_push_tokens')
-    .select('id')
-    .eq('user_id', userId)
-    .eq('token', token)
-    .maybeSingle();
-  if (legacyReadError) throw legacyReadError;
-
-  const { error } = legacyToken
-    ? await client.from('device_push_tokens').update(record).eq('id', legacyToken.id)
-    : await client.from('device_push_tokens').insert({ user_id: userId, ...record });
+  // Expo 토큰은 계정이 아니라 앱 설치/기기 단위다. 계정을 바꾸면 서버 RPC가
+  // 해당 토큰을 현재 세션 계정으로 원자적으로 이전해 중복 키 충돌을 막는다.
+  const { error } = await client.rpc('claim_device_push_token', {
+    p_platform: 'ios',
+    p_token: token,
+    p_device_id: deviceId,
+  });
   if (error) throw error;
 }
 

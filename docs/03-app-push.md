@@ -59,7 +59,7 @@ flowchart LR
 3. 앱이 알림 권한을 확인하고, 필요하면 시스템 권한 팝업을 표시한다.
 4. 허용된 경우에만 `getExpoPushTokenAsync()`로 `ExponentPushToken[...]` 값을 얻는다.
 5. iOS IDFV를 읽어 `ios:<IDFV>` 형식의 `device_id`를 만든다.
-6. `user_id + platform + device_id`가 같은 행이 있으면 토큰을 갱신하고, 없으면 새 행을 만든다.
+6. `claim_device_push_token` RPC가 토큰을 현재 로그인 계정으로 연결한다. 같은 iPhone에서 계정을 바꾸면 이전 계정 연결을 끊고 새 계정으로 이전한다.
 
 IDFV가 iOS 재시작 직후 잠금 상태 등으로 일시적으로 `null`이면 저장을 건너뛰고 다음 앱 실행에서 재시도한다. 기기 토큰이 앱 실행 중 바뀌는 경우에도 push token listener가 같은 저장 함수를 다시 호출한다.
 
@@ -75,6 +75,8 @@ Expo Push Token은 재설치, APNs Sandbox/Production 전환, 제공자 측 토�
 ```
 
 기존 앱 버전이 `device_id = null`로 저장한 현재 Expo 토큰은, 새 코드가 처음 실행될 때 같은 행에 `device_id`를 채워 이관한다. 비활성화된 과거 행은 `device_id = null`이어도 발송 대상이 아니므로 즉시 삭제할 필요는 없다.
+
+한 iPhone에서 본계정과 테스트계정을 번갈아 로그인하는 경우에도 Expo 토큰 자체는 바뀌지 않을 수 있다. 이때 RPC가 토큰의 `user_id`만 현재 계정으로 이전하므로, 기기 알림은 현재 로그인한 계정에 대해서만 수신한다.
 
 ### 3.3 로그아웃과 탈퇴
 
@@ -228,6 +230,8 @@ Function은 secret key가 있는 내부 호출자만 사용할 수 있다. 특�
 
 공지 푸시는 `notifications.kind = 'room_notice'` 행마다 DB webhook이 `deliver-room-notice-push` Edge Function을 호출해 전송한다. Function은 해당 소식의 수신자 토큰만 조회하므로 방 외부 사용자나 공지 작성자에게는 전달되지 않는다.
 
+DB webhook은 secret key를 Git이나 Function 환경 변수에 두지 않고 Supabase Vault의 `room_notice_push_api_key`에서만 읽는다. `deliver-room-notice-push`와 `send-push`가 내부 조회에 필요한 `profiles`, `notifications`, `room_posts`, `device_push_tokens`의 최소 `service_role` 권한만 가진다. 이 권한은 모바일 앱 역할(`anon`·`authenticated`)에는 부여하지 않는다.
+
 ## 7. 지난 주차 1위 `잔소리` 발송
 
 ### 7.1 사용 규칙
@@ -302,6 +306,7 @@ flowchart LR
 | `device_id`가 비어 있음 | 최신 OTA 적용 후 앱 재실행, iPhone 잠금 해제 후 재시도 |
 | 알림이 중복 도착 | 활성 Expo 토큰이 동일 기기에 여러 개인지 확인 |
 | Function이 401 | `apikey` 헤더에 project secret key를 사용했는지 확인 |
+| Function이 502 | `service_role`의 푸시용 최소 테이블 권한과 DB webhook의 Vault key 존재 여부 확인 |
 | Function이 400 | `audience`, UUID, 제목·본문 길이, 허용된 `data.route` 확인 |
 | Function 응답은 성공인데 기기 수신 실패 | 앱 권한, APNs credentials, Expo ticket/receipt, 기기 네트워크 확인 |
 | 푸시 탭 후 잘못된 화면 이동 | payload의 `data.route`가 허용 경로인지 확인 |

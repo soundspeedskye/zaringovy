@@ -23,10 +23,10 @@ export function PushNotificationProvider({
 
     // 토큰 등록 실패가 앱 시작을 막아서는 안 된다. 다음 앱 실행·토큰 교체 때
     // 다시 시도하며, 실제 원인은 개발 빌드의 로그에서 확인할 수 있다.
-    void registerPushNotificationsForUser(userId).catch(() => undefined);
+    void registerPushNotificationsForUser().catch(() => undefined);
 
     const subscription = Notifications.addPushTokenListener((token) => {
-      void syncPushToken(userId, token.data).catch(() => undefined);
+      void syncPushToken(token.data).catch(() => undefined);
     });
     return () => subscription.remove();
   }, [userId]);
