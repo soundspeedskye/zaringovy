@@ -3,7 +3,7 @@
 - 문서 상태: iOS 1차 구현 완료
 - 최종 반영: 2026-09-07
 - 대상: iOS / Expo Push Service / Supabase Edge Functions
-- 현재 iOS OTA 그룹: `67db8b51-92a2-48ae-ad34-10f54d02e446`
+- 현재 iOS OTA 그룹: `8c4068d7-18b3-4b25-8fa6-d852995ff89e`
 
 이 문서는 자린고비 앱의 원격 푸시가 어떤 구조로 동작하는지, 이후 자동·전체·예약 발송을 어디에 연결해야 하는지를 정리한다. 실제 Push Token, APNs `.p8` 키, Supabase secret key는 이 문서나 Git에 기록하지 않는다.
 
