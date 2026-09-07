@@ -6,6 +6,12 @@ export type AppDerivedState = {
   activeRoom: Room | null;
   currentPeriod: Period | null;
   pastPeriods: Period[];
+  /**
+   * 먼저 참여한 같은 닉네임의 멤버가 있어 닉네임을 바꿔야 하는 방. 서버 스냅샷에서
+   * 그대로 읽으므로 앱을 다시 켜도 같은 값이 나오고, 라우팅 가드가 이 값만 보고
+   * 필수 변경 화면을 띄운다.
+   */
+  nicknameChangeRequiredRoomId: string | null;
 };
 
 export function deriveAppState(
@@ -20,6 +26,7 @@ export function deriveAppState(
       activeRoom: null,
       currentPeriod: null,
       pastPeriods: [],
+      nicknameChangeRequiredRoomId: null,
     };
   }
   const sameUser = previousSnapshot?.currentUserId === snapshot.currentUserId;
@@ -45,7 +52,33 @@ export function deriveAppState(
     && previousSnapshot.roomMembers === snapshot.roomMembers
     ? previousState.pastPeriods
     : selectPastPeriods(snapshot);
-  return { currentUser, activeRoom, currentPeriod, pastPeriods };
+  const nicknameChangeRequiredRoomId = previousState
+    && sameUser
+    && previousSnapshot?.roomMembers === snapshot.roomMembers
+    ? previousState.nicknameChangeRequiredRoomId
+    : selectNicknameChangeRequiredRoomId(snapshot);
+  return {
+    currentUser,
+    activeRoom,
+    currentPeriod,
+    pastPeriods,
+    nicknameChangeRequiredRoomId,
+  };
+}
+
+/**
+ * 방을 열려면 닉네임부터 바꿔야 하는 멤버십. 이용자는 활성 방을 하나만 가지므로
+ * 가장 먼저 걸리는 하나면 충분하다. 나간 방(status !== 'ACTIVE')의 표시는 남아
+ * 있어도 더 이상 막을 것이 없으니 보지 않는다.
+ */
+function selectNicknameChangeRequiredRoomId(snapshot: AppSnapshot): string | null {
+  const blocked = snapshot.roomMembers.find(
+    (member) =>
+      member.userId === snapshot.currentUserId
+      && member.status === 'ACTIVE'
+      && member.nicknameChangeRequired,
+  );
+  return blocked?.roomId ?? null;
 }
 
 function selectActiveRoom(snapshot: AppSnapshot | null): Room | null {

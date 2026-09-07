@@ -52,6 +52,7 @@ export type RoomMemberRow = {
   role: 'owner' | 'member';
   status: 'active' | 'left' | 'removed' | 'account_deleted';
   joined_at: string;
+  nickname_change_required: boolean | null;
 };
 
 export type PeriodStatusRow = {

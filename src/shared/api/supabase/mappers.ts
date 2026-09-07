@@ -169,6 +169,7 @@ export function mapRoomMember(row: RoomMemberRow): RoomMember {
     role: row.role === "owner" ? "OWNER" : "MEMBER",
     status: mapMemberStatus(row.status),
     joinedAt: row.joined_at,
+    nicknameChangeRequired: row.nickname_change_required === true,
   };
 }
 

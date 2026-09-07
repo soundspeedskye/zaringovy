@@ -989,7 +989,7 @@ export class SupabaseRepository implements AppRepository {
         .order("created_at", { ascending: false }),
       this.client
         .from("room_members")
-        .select("room_id,user_id,role,status,joined_at")
+        .select("room_id,user_id,role,status,joined_at,nickname_change_required")
         .order("joined_at", { ascending: true }),
       this.client
         .from("period_status_view")

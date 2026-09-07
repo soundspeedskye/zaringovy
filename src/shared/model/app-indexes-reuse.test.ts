@@ -187,8 +187,8 @@ function createDenseSnapshot(): AppSnapshot {
       createdAt: '2026-08-03T00:00:00.000Z',
     }],
     roomMembers: [
-      { roomId: 'room-1', userId: 'user-a', role: 'OWNER', status: 'ACTIVE', joinedAt: '2026-08-03T00:00:00.000Z' },
-      { roomId: 'room-1', userId: 'user-b', role: 'MEMBER', status: 'ACTIVE', joinedAt: '2026-08-03T00:00:00.000Z' },
+      { roomId: 'room-1', userId: 'user-a', role: 'OWNER', status: 'ACTIVE', joinedAt: '2026-08-03T00:00:00.000Z', nicknameChangeRequired: false },
+      { roomId: 'room-1', userId: 'user-b', role: 'MEMBER', status: 'ACTIVE', joinedAt: '2026-08-03T00:00:00.000Z', nicknameChangeRequired: false },
     ],
     periods: [
       {

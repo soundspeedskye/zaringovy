@@ -185,6 +185,7 @@ describe('mapRoomMember', () => {
     role: 'owner',
     status: 'active',
     joined_at: '2026-08-03T00:00:00.000Z',
+    nickname_change_required: false,
   };
 
   it('행을 방 멤버로 옮긴다', () => {
@@ -194,11 +195,26 @@ describe('mapRoomMember', () => {
       role: 'OWNER',
       status: 'ACTIVE',
       joinedAt: '2026-08-03T00:00:00.000Z',
+      nicknameChangeRequired: false,
     });
   });
 
   it('owner가 아니면 MEMBER다', () => {
     expect(mapRoomMember({ ...row, role: 'member' }).role).toBe('MEMBER');
+  });
+
+  // 열이 추가되기 전에 캐시된 행이나 아직 값이 없는 행은 null로 온다. 차단은
+  // 명시적으로 표시된 경우에만 성립해야 하므로 null은 "막히지 않음"이다.
+  it('중복 표시가 없으면 막히지 않은 것으로 읽는다', () => {
+    expect(
+      mapRoomMember({ ...row, nickname_change_required: null }).nicknameChangeRequired,
+    ).toBe(false);
+  });
+
+  it('중복 표시를 그대로 옮긴다', () => {
+    expect(
+      mapRoomMember({ ...row, nickname_change_required: true }).nicknameChangeRequired,
+    ).toBe(true);
   });
 });
 

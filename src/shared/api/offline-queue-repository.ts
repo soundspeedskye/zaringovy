@@ -1463,6 +1463,11 @@ export class OfflineQueueRepository implements AppRepository {
     if (expiredAfterRefresh) this.emitLocked();
     const userId = this.baseSnapshot?.currentUserId;
     if (!userId) return;
+    // 닉네임 중복으로 막힌 방에서는 서버가 지출·댓글 쓰기를 모두 거절한다. 그대로
+    // 재생하면 쌓아 둔 변경이 자동 재시도 횟수만 태우고 실패로 남는다. 큐는 손대지
+    // 않고 이번 회차만 건너뛴다. 방금 위에서 새로 읽은 스냅샷으로 판단하므로,
+    // 닉네임을 바꿔 표시가 풀리면 그 스냅샷 알림이 다시 flush를 부른다.
+    if (isNicknameChangeRequired(this.baseSnapshot)) return;
 
     while (true) {
       const operation = this.queue.operations
@@ -1925,6 +1930,20 @@ function hasAdvancedVersion(
 function applyPhotoUri(operation: MutationOperation, uri: string): void {
   if (operation.kind === 'ADD_EXPENSE') operation.input.photoUri = uri;
   if (operation.kind === 'UPDATE_EXPENSE') operation.patch.photoUri = uri;
+}
+
+/**
+ * 서버가 이 사용자의 방 쓰기를 막고 있는가. 표시는 멤버십 행에 있으므로 스냅샷만
+ * 보면 되고, 앱을 다시 켜도 같은 답이 나온다.
+ */
+function isNicknameChangeRequired(snapshot: AppSnapshot | null): boolean {
+  if (!snapshot) return false;
+  return snapshot.roomMembers.some(
+    (member) =>
+      member.userId === snapshot.currentUserId
+      && member.status === 'ACTIVE'
+      && member.nicknameChangeRequired,
+  );
 }
 
 function classifyError(error: unknown): { code: string; message: string; permanent: boolean } {

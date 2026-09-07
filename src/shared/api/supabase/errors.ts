@@ -42,6 +42,14 @@ export function translateError(error: unknown, fallback: string): RepositoryErro
   if (message === 'NICKNAME_COOLDOWN') {
     return new RepositoryError('NICKNAME_COOLDOWN', '닉네임은 7일에 한 번만 변경할 수 있어요.', { cause: error });
   }
+  // 방 안 닉네임 규칙. 아래 42501/P0001 일반 분기보다 먼저 봐야 한다. 그 분기는
+  // '권한이 없어요'로 뭉뚱그려, 무엇을 하면 풀리는지 알려주지 못한다.
+  if (message === 'ROOM_NICKNAME_TAKEN') {
+    return new RepositoryError('ROOM_NICKNAME_TAKEN', '이 방에서 이미 사용 중인 닉네임입니다.', { cause: error });
+  }
+  if (message === 'NICKNAME_CHANGE_REQUIRED') {
+    return new RepositoryError('NICKNAME_CHANGE_REQUIRED', '닉네임을 변경해야 방에서 활동할 수 있어요.', { cause: error });
+  }
   if (message === 'INVALID_NICKNAME') {
     return new RepositoryError('INVALID_NICKNAME', '닉네임은 앞뒤 공백을 제외하고 2~20자로 입력해 주세요.', { cause: error });
   }

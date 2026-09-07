@@ -19,8 +19,8 @@ export function createTestSnapshot(): AppSnapshot {
       createdAt: '2026-08-03T00:00:00.000Z',
     }],
     roomMembers: [
-      { roomId: 'room-test', userId: 'user-me', role: 'OWNER', status: 'ACTIVE', joinedAt: '2026-08-03T00:00:00.000Z' },
-      { roomId: 'room-test', userId: 'user-other', role: 'MEMBER', status: 'ACTIVE', joinedAt: '2026-08-03T00:00:00.000Z' },
+      { roomId: 'room-test', userId: 'user-me', role: 'OWNER', status: 'ACTIVE', joinedAt: '2026-08-03T00:00:00.000Z', nicknameChangeRequired: false },
+      { roomId: 'room-test', userId: 'user-other', role: 'MEMBER', status: 'ACTIVE', joinedAt: '2026-08-03T00:00:00.000Z', nicknameChangeRequired: false },
     ],
     periods: [{
       id: 'period-test',

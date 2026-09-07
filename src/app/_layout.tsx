@@ -8,7 +8,9 @@ import { useEffect } from 'react';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
 
 import { palette } from '@/shared/config/design';
+import type { AppStoreState } from '@/shared/model/app-store';
 import { AppProvider } from '@/shared/providers/app-provider';
+import { useAppStoreSelector } from '@/shared/providers/app-store-provider';
 import { AppDialogProvider } from '@/shared/providers/app-dialog-provider';
 import { PushNotificationProvider } from '@/shared/providers/push-notification-provider';
 import { cancelLegacyDeviceNotifications } from '@/shared/services/device-notification-cleanup';
@@ -82,6 +84,7 @@ function AuthenticatedApp() {
       sessionUserId={session?.user.id ?? null}>
       <PushNotificationProvider userId={session?.user.id ?? null}>
         <AppDialogProvider>
+          <NicknameChangeGate />
           <StatusBar style="dark" />
           {/*
             fullScreenGestureEnabled: iOS 26은 기본값이 true지만 18 이하는 false라,
@@ -104,6 +107,15 @@ function AuthenticatedApp() {
             <Stack.Screen name="community/[id]" />
             <Stack.Screen name="community/new" options={{ presentation: 'modal' }} />
             <Stack.Screen name="profile/edit" options={{ presentation: 'modal' }} />
+            {/*
+              필수 닉네임 변경은 사용자가 닫을 수 있는 모달이 아니라 통과해야 하는
+              화면이다. 모달로 띄우면 스와이프로 내려 방 화면이 그대로 드러난다.
+              제스처를 끄고, 위 가드가 우회 경로를 되돌린다.
+            */}
+            <Stack.Screen
+              name="profile/nickname-required"
+              options={{ gestureEnabled: false, fullScreenGestureEnabled: false }}
+            />
             <Stack.Screen name="account/delete" options={{ presentation: 'modal' }} />
             <Stack.Screen name="expense/new" options={{ presentation: 'modal' }} />
             <Stack.Screen name="expense/[id]" />
@@ -116,4 +128,35 @@ function AuthenticatedApp() {
       </PushNotificationProvider>
     </AppProvider>
   );
+}
+
+const selectNicknameChangeRequiredRoomId = (state: AppStoreState) =>
+  state.nicknameChangeRequiredRoomId;
+
+/**
+ * 방에서 닉네임이 겹쳐 활동이 막힌 사용자를 전용 화면에 붙잡아 둔다.
+ *
+ * 표시는 클라이언트 상태가 아니라 서버 스냅샷(room_members)에서 온다. 그래서 앱을
+ * 다시 켜거나 기기를 바꿔도 같은 화면으로 돌아오고, 딥링크·탭 이동·뒤로가기로
+ * 어느 화면에 닿든 여기서 되돌려진다. 실제 쓰기 차단은 서버가 하고, 이 가드는
+ * 막힌 화면을 보여주지 않기 위한 것이다.
+ */
+function NicknameChangeGate() {
+  const router = useRouter();
+  const segments = useSegments();
+  const blockedRoomId = useAppStoreSelector(selectNicknameChangeRequiredRoomId);
+  const onNicknameScreen =
+    segments[0] === 'profile' && segments[1] === 'nickname-required';
+
+  useEffect(() => {
+    if (blockedRoomId && !onNicknameScreen) {
+      router.replace('/profile/nickname-required');
+      return;
+    }
+    // 닉네임을 바꿔 표시가 풀리면 화면도 함께 닫는다. 이 화면은 되돌아갈 수 있는
+    // 스택 위가 아니라 대체된 자리라, 여기서 내보내지 않으면 남는다.
+    if (!blockedRoomId && onNicknameScreen) router.replace('/');
+  }, [blockedRoomId, onNicknameScreen, router]);
+
+  return null;
 }

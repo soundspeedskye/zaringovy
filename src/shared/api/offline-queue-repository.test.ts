@@ -500,6 +500,37 @@ describe('OfflineQueueRepository', () => {
     unsubscribe();
   });
 
+  // 닉네임이 겹쳐 방 활동이 막힌 동안 서버는 지출·댓글 쓰기를 전부 거절한다.
+  // 그대로 재생하면 자동 재시도 횟수만 태우고 쌓아 둔 변경이 실패로 남는다.
+  it('닉네임을 바꿔야 하는 동안에는 재생을 멈췄다가 풀리면 이어서 보낸다', async () => {
+    const storage = new MemoryStorage();
+    const network = new FakeNetwork(false);
+    const base = new FakeRepository(snapshotFixture('user-a', FUTURE_PERIOD));
+    const queue = repository(base, storage, network, new MemoryPhotoStore());
+
+    // 막히기 전에 오프라인으로 쌓아 둔 지출.
+    await queue.load();
+    await queue.addExpense(expenseInput('request-blocked'));
+
+    base.replaceSnapshot(blockNickname(snapshotFixture('user-a', FUTURE_PERIOD)));
+    network.online = true;
+    await queue.flushNow();
+
+    expect(base.addExpenseCalls).toBe(0);
+    const held = await queue.getQueueOperations();
+    expect(held).toHaveLength(1);
+    // 보류일 뿐 실패가 아니다. 실패로 적으면 화면이 사용자에게 오류를 알린다.
+    expect(held[0]?.status).toBe('PENDING');
+    expect(held[0]?.failure).toBeUndefined();
+
+    // 닉네임을 바꾸면 서버가 표시를 지우고, 그 스냅샷으로 재생이 이어진다.
+    base.replaceSnapshot(snapshotFixture('user-a', FUTURE_PERIOD));
+    await queue.flushNow();
+
+    expect(base.addExpenseCalls).toBe(1);
+    expect(await queue.getQueueOperations()).toEqual([]);
+  });
+
   function repository(
     base: FakeRepository,
     storage: MemoryStorage,
@@ -953,6 +984,7 @@ function snapshotFixture(userId: string, period: Period): AppSnapshot {
       role: 'OWNER',
       status: 'ACTIVE',
       joinedAt: `${period.weekStart}T00:00:00.000Z`,
+      nicknameChangeRequired: false,
     }],
     periods: [clone(period)],
     periodMembers: [{
@@ -998,6 +1030,17 @@ function periodFixture(weekStart: string): Period {
     phase: 'ACTIVE',
     isRestWeek: false,
     createdAt: `${weekStart}T00:00:00.000Z`,
+  };
+}
+
+function blockNickname(snapshot: AppSnapshot): AppSnapshot {
+  return {
+    ...snapshot,
+    roomMembers: snapshot.roomMembers.map((member) =>
+      member.userId === snapshot.currentUserId
+        ? { ...member, nicknameChangeRequired: true }
+        : member,
+    ),
   };
 }
 

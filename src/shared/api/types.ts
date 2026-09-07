@@ -46,6 +46,12 @@ export type RoomMember = {
   role: RoomRole;
   status: MemberStatus;
   joinedAt: string;
+  /**
+   * 먼저 참여한 같은 닉네임의 활성 멤버가 있어, 닉네임을 바꾸기 전까지 이 방에서
+   * 참여성 쓰기를 할 수 없는 상태. 서버(room_members)가 들고 있으므로 앱을 다시
+   * 켜도 유지된다.
+   */
+  nicknameChangeRequired: boolean;
 };
 
 /** 주차: 월~금 고정 주간 타임라인 (D1). 매주 자동 생성된다 (D7). */
