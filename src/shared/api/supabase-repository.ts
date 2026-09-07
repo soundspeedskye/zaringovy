@@ -71,6 +71,7 @@ import {
   mapRoomPostReaction,
   mapRoomPostRead,
   mapStats,
+  mapWinnerNudgeGrant,
   requiredString,
 } from "./supabase/mappers";
 import { readPhoto, safeObjectStem } from "./supabase/photos";
@@ -83,6 +84,7 @@ import {
   fetchExpenseReadRows,
   fetchExpenseRows,
   fetchNotificationRows,
+  fetchWinnerNudgeGrantRows,
   fetchRoomPostCommentRows,
   fetchRoomPostPollOptionRows,
   fetchRoomPostPollVoteRows,
@@ -111,6 +113,7 @@ import type {
   RoomMemberRow,
   RoomMemberStatsRow,
   RoomRow,
+  WinnerNudgeGrantRow,
 } from "./supabase/rows";
 import { CATEGORY_TO_DATABASE } from "./supabase/rows";
 
@@ -146,6 +149,7 @@ const REALTIME_TABLES = [
   "room_post_poll_options",
   "room_post_poll_votes",
   "notifications",
+  "winner_nudge_grants",
   "expense_exceptions",
   "expense_exception_approvals",
 ] as const;
@@ -936,6 +940,15 @@ export class SupabaseRepository implements AppRepository {
     );
   }
 
+  async sendWinnerNudge(input: { roomId: string; body: string }): Promise<void> {
+    await this.requireUserId();
+    const { error } = await this.client.functions.invoke("send-winner-nudge", {
+      body: { roomId: input.roomId, body: input.body.trim() },
+    });
+    if (error) throw translateError(error, "잔소리를 보내지 못했어요.");
+    await this.reloadAndNotify();
+  }
+
   subscribe(listener: (snapshot: AppSnapshot) => void): Unsubscribe {
     this.listeners.add(listener);
     if (this.lastSnapshot) listener(clone(this.lastSnapshot));
@@ -974,6 +987,7 @@ export class SupabaseRepository implements AppRepository {
       roomPostPollOptionRows,
       roomPostPollVoteRows,
       notificationRows,
+      winnerNudgeGrantRows,
       exceptionRows,
       responseRows,
       preferencesResult,
@@ -1030,6 +1044,7 @@ export class SupabaseRepository implements AppRepository {
       fetchRoomPostPollOptionRows(this.client),
       fetchRoomPostPollVoteRows(this.client),
       fetchNotificationRows(this.client),
+      fetchWinnerNudgeGrantRows(this.client),
       fetchExceptionRows(this.client),
       fetchExceptionResponseRows(this.client),
       this.client.from("user_room_preferences").select("room_id,is_hidden"),
@@ -1061,6 +1076,7 @@ export class SupabaseRepository implements AppRepository {
     const statsRows = rows<RoomMemberStatsRow>(statsResult.data);
     const inviteRows = rows<InviteCodeRow>(invitesResult.data);
     const preferenceRows = rows<PreferenceRow>(preferencesResult.data);
+    const grantRows = winnerNudgeGrantRows as WinnerNudgeGrantRow[];
 
     const expensePhotoPaths = expenseRows
       .filter((row) => row.deleted_at === null)
@@ -1179,6 +1195,7 @@ export class SupabaseRepository implements AppRepository {
         .filter((row) => visibleRoomPostIds.has(row.post_id))
         .map(mapRoomPostPollVote),
       notifications: notificationRows.map(mapNotification),
+      winnerNudgeGrants: grantRows.map(mapWinnerNudgeGrant),
       expenseExceptions: visibleExceptionRows.map(mapExpenseException),
       expenseExceptionResponses: visibleResponseRows.map(
         mapExpenseExceptionResponse,

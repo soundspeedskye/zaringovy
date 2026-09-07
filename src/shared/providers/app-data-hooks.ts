@@ -1,5 +1,5 @@
 import { useCallback } from 'react';
-import type { Expense, Period, Profile, Room, RoomRole } from '@/shared/api/types';
+import type { Expense, Period, Profile, Room, RoomRole, WinnerNudgeGrant } from '@/shared/api/types';
 import type { AppStoreState } from '@/shared/model/app-store';
 import {
   shallowEqual,
@@ -96,6 +96,15 @@ export function useCrownIds(periodId: string | undefined): string[] {
       },
       [periodId],
     ),
+  );
+}
+
+export function useWinnerNudgeGrant(roomId: string | undefined): WinnerNudgeGrant | undefined {
+  return useAppStoreSelector(
+    useCallback((state: AppStoreState) => {
+      if (!roomId) return undefined;
+      return state.snapshot?.winnerNudgeGrants?.find((grant) => grant.roomId === roomId);
+    }, [roomId]),
   );
 }
 

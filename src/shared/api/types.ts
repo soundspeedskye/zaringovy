@@ -280,7 +280,7 @@ export type RoomPostPollVote = {
   createdAt: string;
 };
 
-/** 앱 안 소식함에 표시하는 사용자별 이벤트. 본문은 저장하지 않는다. */
+/** 앱 안 소식함에 표시하는 사용자별 이벤트. 일부 종류는 본문을 함께 저장한다. */
 export type AppNotification = {
   id: string;
   userId: string;
@@ -292,8 +292,21 @@ export type AppNotification = {
   commentId?: string;
   postId?: string;
   route: string;
+  body?: string;
   readAt?: string;
   createdAt: string;
+};
+
+export type WinnerNudgeGrant = {
+  id: string;
+  roomId: string;
+  maxSendCount?: number;
+  dailyLimit: number;
+  sentCount: number;
+  dailySentCount: number;
+  dailySendOn?: string;
+  lastSentAt?: string;
+  expiresAt: string;
 };
 
 /** 지출에 붙은 예외 제안. 활성 멤버 전원 승인 시 정산에서 제외된다. */
@@ -336,6 +349,7 @@ export type AppSnapshot = {
   roomPostPollOptions: RoomPostPollOption[];
   roomPostPollVotes: RoomPostPollVote[];
   notifications: AppNotification[];
+  winnerNudgeGrants?: WinnerNudgeGrant[];
   expenseExceptions: ExpenseException[];
   expenseExceptionResponses: ExpenseExceptionResponse[];
   processedRequestIds: string[];

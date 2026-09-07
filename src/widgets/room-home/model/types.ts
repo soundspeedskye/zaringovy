@@ -6,6 +6,7 @@ import type {
   PeriodMember,
   Profile,
   Room,
+  WinnerNudgeGrant,
 } from "@/shared/api/types";
 import type { PeriodPhase, PeriodTimeline } from "@/shared/model/types";
 
@@ -34,6 +35,7 @@ export type RoomHomeData = {
   /** 아직 상세를 열지 않은 남의 지출 ID. 최근 피드·일별 시트의 NEW 표시에 쓴다. */
   unreadExpenseIds: ReadonlySet<string>;
   error: string | null;
+  winnerNudgeGrant?: WinnerNudgeGrant;
 };
 
 /** Navigation and status callbacks shared across every home view state. */

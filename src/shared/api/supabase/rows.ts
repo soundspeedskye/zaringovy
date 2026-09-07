@@ -136,7 +136,7 @@ export type CommentRow = {
   client_request_id: string;
   expense_id: string;
   user_id: string;
-  body: string | null;
+  body?: string | null;
   reply_to_comment_id: string | null;
   created_at: string;
   updated_at: string;
@@ -169,9 +169,22 @@ export type NotificationRow = {
   expense_id: string | null;
   comment_id: string | null;
   post_id: string | null;
+  body?: string | null;
   route: string;
   read_at: string | null;
   created_at: string;
+};
+
+export type WinnerNudgeGrantRow = {
+  id: string;
+  room_id: string;
+  max_send_count: number | null;
+  daily_limit: number;
+  sent_count: number;
+  daily_sent_count: number;
+  daily_send_on: string | null;
+  last_sent_at: string | null;
+  expires_at: string;
 };
 
 export type RoomPostRow = {

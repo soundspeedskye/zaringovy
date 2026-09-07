@@ -35,7 +35,7 @@ import {
   useMyPeriodJoinedAt,
   usePeriodMembers,
 } from "@/entities/period/api/use-periods";
-import { useCrownIds, useCurrentRoom } from "@/shared/providers/app-data-hooks";
+import { useCrownIds, useCurrentRoom, useWinnerNudgeGrant } from "@/shared/providers/app-data-hooks";
 import { useAppStatus, useAppStatusActions } from "@/shared/providers/app-status-provider";
 import { expenseDetailHref } from "@/shared/lib/expense-route";
 import type { RoomHomeActions, RoomHomeState } from "@/widgets/room-home";
@@ -69,6 +69,7 @@ export function useRoomHome(): { state: RoomHomeState; actions: RoomHomeActions 
   const profilesById = useProfiles(memberUserIds);
   const commentCounts = useCommentCounts(currentPeriodFeedExpenses);
   const crownIds = useCrownIds(currentPeriod?.id);
+  const winnerNudgeGrant = useWinnerNudgeGrant(activeRoom?.id);
   // 중도 합류자는 합류 전 지출까지 새 것으로 보지 않는다.
   const myPeriodJoinedAt = useMyPeriodJoinedAt(currentPeriod?.id, currentUser?.id);
   const unreadExpenseIds = useUnreadExpenseIds(
@@ -249,6 +250,10 @@ export function useRoomHome(): { state: RoomHomeState; actions: RoomHomeActions 
         profilesById,
         unreadExpenseIds,
         error,
+        winnerNudgeGrant: winnerNudgeGrant && new Date(winnerNudgeGrant.expiresAt).getTime() > now
+          && (winnerNudgeGrant.maxSendCount === undefined || winnerNudgeGrant.sentCount < winnerNudgeGrant.maxSendCount)
+          ? winnerNudgeGrant
+          : undefined,
       },
     };
   }, [
@@ -267,6 +272,7 @@ export function useRoomHome(): { state: RoomHomeState; actions: RoomHomeActions 
     timeline,
     currentPeriodFeedExpenses,
     unreadExpenseIds,
+    winnerNudgeGrant,
   ]);
 
   return { state, actions };

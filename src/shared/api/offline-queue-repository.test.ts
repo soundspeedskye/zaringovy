@@ -947,6 +947,10 @@ class FakeRepository implements AppRepository {
     });
   }
 
+  async sendWinnerNudge(_input: { roomId: string; body: string }): Promise<void> {
+    throw new Error('not implemented');
+  }
+
   subscribe(listener: (snapshot: AppSnapshot) => void): Unsubscribe {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);

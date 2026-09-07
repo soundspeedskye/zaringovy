@@ -180,6 +180,8 @@ function notificationCopy(notification: AppNotification, actorName?: string) {
       return `${actor}님이 방에 참여했어요.`;
     case "room_notice":
       return `${actor}님이 새 공지를 올렸어요.`;
+    case "winner_nudge":
+      return `${actor}님의 잔소리: ${notification.body ?? "이번 주도 영수증 잘 챙겨요!"}`;
     default:
       return "새 소식이 도착했어요.";
   }

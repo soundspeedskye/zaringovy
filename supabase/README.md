@@ -125,7 +125,7 @@ Join failures use `INVALID_CODE`, `RATE_LIMITED`, `CHALLENGE_CLOSED`,
 | `challenge_member_results` | frozen per-member calculation/result rows |
 | `user_challenge_preferences` | per-user hide and notification settings |
 | `reports`, `blocks` | safety controls scoped by RLS |
-| `notifications` | owner-only kind/actor/entity/route/read state; no message body is stored |
+| `notifications` | owner-only kind/actor/entity/route/read state; `winner_nudge`에는 80자 이하 본문도 저장 |
 | `room_posts`, `room_post_poll_options`, `room_post_poll_votes` | member-scoped board posts and single-choice poll data; direct writes are RPC-only |
 | `device_push_tokens` | owner-only iOS/Android token registration and enable state |
 

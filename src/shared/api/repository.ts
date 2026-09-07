@@ -68,6 +68,7 @@ export interface AppRepository {
   voteRoomPostPoll(postId: string, optionId: string): Promise<void>;
   markNotificationsRead(notificationIds: readonly string[]): Promise<void>;
   markAllNotificationsRead(): Promise<void>;
+  sendWinnerNudge(input: { roomId: string; body: string }): Promise<void>;
   subscribe(listener: (snapshot: AppSnapshot) => void): Unsubscribe;
 }
 

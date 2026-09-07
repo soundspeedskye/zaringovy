@@ -24,7 +24,7 @@ export const EXPENSE_COLUMNS =
 export const COMMENT_COLUMNS =
   "id,client_request_id,expense_id,user_id,body,reply_to_comment_id,created_at,updated_at,deleted_at,version";
 export const NOTIFICATION_COLUMNS =
-  "id,user_id,kind,actor_id,room_id,period_id,expense_id,comment_id,post_id,route,read_at,created_at";
+  "id,user_id,kind,actor_id,room_id,period_id,expense_id,comment_id,post_id,route,body,read_at,created_at";
 export const ROOM_POST_COLUMNS =
   "id,client_request_id,room_id,period_id,kind,category,author_id,title,body,poll_closes_at,photo_path,secret_purchase_amount,secret_purchase_occurred_at,secret_purchase_category,created_at,updated_at,deleted_at,version";
 export const ROOM_POST_COMMENT_COLUMNS =
@@ -178,6 +178,15 @@ export async function fetchNotificationRows(
     throw translateError(result.error, "소식 데이터를 갱신하지 못했어요.");
   }
   return rows<NotificationRow>(result.data);
+}
+
+export async function fetchWinnerNudgeGrantRows(client: SupabaseClient): Promise<import("./rows").WinnerNudgeGrantRow[]> {
+  const result = await client
+    .from("winner_nudge_grants")
+    .select("id,room_id,max_send_count,daily_limit,sent_count,daily_sent_count,daily_send_on,last_sent_at,expires_at")
+    .order("expires_at", { ascending: false });
+  if (result.error) throw translateError(result.error, "우승자 발송권을 불러오지 못했어요.");
+  return rows<import("./rows").WinnerNudgeGrantRow>(result.data);
 }
 
 export async function fetchExceptionRows(

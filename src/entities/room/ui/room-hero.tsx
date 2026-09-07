@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import Svg, { Circle } from "react-native-svg";
 
 import { AnimalAvatar } from "@/shared/ui/animal-avatar";
+import { WinnerCrownIcon } from "@/shared/ui/winner-crown-icon";
 import {
   fonts,
   palette,
@@ -41,6 +42,7 @@ type RoomHeroProps = {
   onPressSettings?: () => void;
   /** 유효한 날짜를 누르면, 화면을 벗어나지 않고 그날의 지출 요약을 연다. */
   onPressWeekDay?: (date: string) => void;
+  onPressWinnerNudge?: () => void;
 };
 
 const ringSize = 132;
@@ -62,6 +64,7 @@ export function RoomHero({
   participants,
   onPressSettings,
   onPressWeekDay,
+  onPressWinnerNudge,
 }: RoomHeroProps) {
   const safeLimit = Math.max(appliedLimit, 1);
   const hasPending = pendingDelta !== 0 || pendingCount > 0;
@@ -80,7 +83,7 @@ export function RoomHero({
           {daysRemaining <= 0 ? "오늘 종료" : `D-${daysRemaining}`} | {weekMonthLabel}
         </Text>
       </View>
-      <View style={styles.titleRow}>
+      <View style={[styles.titleRow, onPressWinnerNudge && styles.titleRowWithNudge]}>
         <Text numberOfLines={1} style={styles.title}>
           {title}
         </Text>
@@ -103,6 +106,12 @@ export function RoomHero({
           </Pressable>
         ) : null}
       </View>
+      {onPressWinnerNudge ? (
+        <View style={styles.winnerNudgeRow}>
+          <View style={styles.winnerNudgeLabel}><WinnerCrownIcon size={22} /><Text style={styles.winnerNudgeText}>지난 주차 1위!</Text></View>
+          <Pressable accessibilityLabel="잔소리 보내기" accessibilityRole="button" onPress={onPressWinnerNudge} style={styles.winnerNudgeButton}><Text style={styles.winnerNudgeButtonText}>잔소리 ›</Text></Pressable>
+        </View>
+      ) : null}
       <View style={styles.summary}>
         <View style={styles.ringWrap}>
           <Svg
@@ -265,6 +274,12 @@ const styles = StyleSheet.create({
     marginTop: 12,
     marginBottom: 22,
   },
+  titleRowWithNudge: { marginBottom: spacing.sm },
+  winnerNudgeRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: spacing.lg },
+  winnerNudgeLabel: { flexDirection: "row", alignItems: "center", gap: spacing.xs },
+  winnerNudgeText: { color: palette.cream, fontFamily: fonts.handBold, fontSize: 14 },
+  winnerNudgeButton: { paddingHorizontal: spacing.md, paddingVertical: 7, borderRadius: radii.pill, backgroundColor: "rgba(255,255,255,0.14)", borderWidth: 1, borderColor: "rgba(253,246,227,0.32)" },
+  winnerNudgeButtonText: { color: palette.cream, fontFamily: fonts.handBold, fontSize: 13 },
   summary: { flexDirection: "row", alignItems: "center", gap: spacing.xl },
   ringWrap: {
     width: ringSize,

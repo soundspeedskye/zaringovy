@@ -54,6 +54,7 @@ import type {
   RoomPostReadRow,
   RoomPostRow,
   RoomRow,
+  WinnerNudgeGrantRow,
 } from "./rows";
 import { CATEGORY_FROM_DATABASE } from "./rows";
 
@@ -246,9 +247,24 @@ export function mapNotification(row: NotificationRow): AppNotification {
     expenseId: row.expense_id ?? undefined,
     commentId: row.comment_id ?? undefined,
     postId: row.post_id ?? undefined,
-    route: row.route,
+  route: row.route,
+    body: row.body ?? undefined,
     readAt: row.read_at ?? undefined,
     createdAt: row.created_at,
+  };
+}
+
+export function mapWinnerNudgeGrant(row: WinnerNudgeGrantRow) {
+  return {
+    id: row.id,
+    roomId: row.room_id,
+    maxSendCount: row.max_send_count ?? undefined,
+    dailyLimit: row.daily_limit,
+    sentCount: row.sent_count,
+    dailySentCount: row.daily_sent_count,
+    dailySendOn: row.daily_send_on ?? undefined,
+    lastSentAt: row.last_sent_at ?? undefined,
+    expiresAt: row.expires_at,
   };
 }
 

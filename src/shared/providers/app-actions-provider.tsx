@@ -47,6 +47,7 @@ const EXECUTED_ACTIONS = [
   'voteRoomPostPoll',
   'markNotificationsRead',
   'markAllNotificationsRead',
+  'sendWinnerNudge',
 ] as const satisfies readonly (keyof AppRepository)[];
 
 type ExecutedAction = (typeof EXECUTED_ACTIONS)[number];

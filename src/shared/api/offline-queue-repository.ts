@@ -707,6 +707,11 @@ export class OfflineQueueRepository implements AppRepository {
     void this.syncBaseAfterMutation().catch(() => undefined);
   }
 
+  async sendWinnerNudge(input: { roomId: string; body: string }): Promise<void> {
+    await this.base.sendWinnerNudge(input);
+    void this.syncBaseAfterMutation().catch(() => undefined);
+  }
+
   subscribe(listener: (snapshot: AppSnapshot) => void): Unsubscribe {
     this.listeners.add(listener);
     this.ensureBaseSubscription();

@@ -18,7 +18,10 @@
 | 수동 수신 테스트 | 완료 | Expo Push Tool로 실기기 수신 확인 |
 | 내부 발송 Function | 완료 | `send-push` Edge Function 배포·활성화 |
 | 특정 사용자·전체 발송 | 준비 완료 | 내부 서비스 또는 크론이 Function을 호출 |
-| 이벤트·예약 발송 연결 | 미구현 | 제품 이벤트와 시간 규칙을 정한 뒤 연결 |
+| 지난 주차 1위 잔소리 | 완료 | 정산 결과 기반 발송권·소식함·기기 푸시까지 연결 |
+| 방 공지 자동 푸시 | 완료 | 공지 소식함 행을 기준으로 같은 방 수신자 기기에 전달 |
+| 댓글·답글 자동 푸시 | 미구현 | `notifications` 이벤트 dispatcher를 별도 연결 예정 |
+| 예약 발송 | 미구현 | 제품 이벤트와 시간 규칙을 정한 뒤 연결 |
 | Android FCM | 미구현 | Android 작업 시 Firebase FCM v1 설정 필요 |
 
 ## 2. 전체 구조
@@ -29,9 +32,12 @@ flowchart LR
     B --> C[ExpoPushToken 발급]
     C --> D[Supabase device_push_tokens 저장]
     E[댓글·공지·예약 등 내부 이벤트] --> F[send-push Edge Function]
+    L[주차 정산 결과] --> M[잔소리 발송권 생성]
+    M --> N[send-winner-nudge Edge Function]
     F --> G[활성 Expo 토큰 조회]
     G --> H[Expo Push API]
     H --> I[APNs]
+    N --> G
     I --> J[iOS 기기 알림]
     J --> K[알림 탭 시 허용된 앱 경로로 이동]
 ```
@@ -213,18 +219,72 @@ Function은 secret key가 있는 내부 호출자만 사용할 수 있다. 특�
 
 `accepted`는 Expo가 요청을 접수했다는 의미다. 실제 APNs 전달까지 확인하려면 기기 수신을 확인하거나 향후 Receipt worker를 추가한다.
 
-## 7. 배포 규칙
+### 6.4 방 공지 자동 푸시 확인
+
+1. Android와 iPhone 계정을 같은 방의 활성 멤버로 준비한다. 공지 작성자는 수신 대상에서 제외된다.
+2. Android의 방장이 공지를 작성한다.
+3. iPhone에서 `새 공지` 알림이 표시되고, 탭하면 해당 공지 상세로 이동하는지 확인한다.
+4. iPhone 소식함에도 기존 공지 소식이 한 번만 쌓였는지 확인한다.
+
+공지 푸시는 `notifications.kind = 'room_notice'` 행마다 DB webhook이 `deliver-room-notice-push` Edge Function을 호출해 전송한다. Function은 해당 소식의 수신자 토큰만 조회하므로 방 외부 사용자나 공지 작성자에게는 전달되지 않는다.
+
+## 7. 지난 주차 1위 `잔소리` 발송
+
+### 7.1 사용 규칙
+
+- 정산 시점의 `period_results.is_crown = true` 결과만 권한 생성의 근거로 사용한다.
+- 단독 1위는 다음 주차 종료 전까지 하루 최대 10회 보낼 수 있다.
+- 공동 1위는 각자 한 번만 보낼 수 있다.
+- 모든 발송 사이에는 30분의 간격이 필요하다.
+- 수신자는 정산 당시 같은 방의 활성 참여자 스냅샷이며, 발송 시점에 방을 떠난 사용자는 제외한다.
+- 발송 문구는 1~80자이며, 본인에게는 보내지 않는다.
+
+### 7.2 구현 흐름
+
+```mermaid
+flowchart LR
+    A[주차 정산] --> B[period_results 삽입]
+    B --> C[winner_nudge_grants 생성]
+    C --> D[우승자 앱 히어로에 잔소리 버튼 표시]
+    D --> E[send-winner-nudge 호출]
+    E --> F[서버에서 횟수·30분·수신자 재검증]
+    F --> G[notifications에 수신자별 소식 생성]
+    G --> H[활성 Expo 토큰에 기기 푸시]
+```
+
+관련 파일:
+
+- `supabase/migrations/20260907141247_add_winner_nudges.sql`
+- `supabase/migrations/20260907142433_add_winner_nudge_realtime.sql`
+- `supabase/functions/send-winner-nudge/index.ts`
+- `src/features/winner-nudge/ui/winner-nudge-sheet.tsx`
+
+정산 트리거가 `winner_nudge_grants`를 만들며, RLS로 우승자 본인만 읽을 수 있다. 이 테이블은 Realtime publication에 포함돼 정산 후 앱을 열어 둔 우승자에게도 버튼이 나타난다.
+
+`send-winner-nudge`는 로그인한 사용자 요청만 받는다. DB RPC에서 현재 사용자·방·만료일·횟수·쿨다운을 잠금과 함께 검증한 뒤 소식함 행을 먼저 저장한다. 그 뒤 Expo 전송이 실패해도 이미 저장한 소식은 유지해 재시도로 중복 발송되지 않게 한다. `DeviceNotRegistered` 응답의 토큰은 자동 비활성화한다.
+
+### 7.3 기기 테스트 순서
+
+1. 정산이 끝난 테스트 방에서 단독 또는 공동 1위 계정으로 로그인한다.
+2. 히어로 카드 제목 아래에 `지난 주차 1위! · 잔소리`가 나타나는지 확인한다.
+3. 문구를 입력해 보낸다. 같은 방의 다른 활성 참여자 기기에서 알림을 받고, 탭하면 소식함으로 이동하는지 확인한다.
+4. 수신자 소식함에 `보낸 사람님의 잔소리: 문구`가 쌓였는지 확인한다.
+5. 보낸 직후 발송 버튼이 비활성화되고 `30분 뒤에 다음 잔소리를 보낼 수 있습니다.`가 나타나는지 확인한다.
+6. 단독 1위는 날짜 기준 10회 제한, 공동 1위는 1회 제한도 확인한다.
+
+## 8. 배포 규칙
 
 | 변경 | 필요한 배포 |
 |---|---|
 | 화면·토큰 동기화 같은 JS/TS 변경 | EAS Update (OTA) |
 | `expo-notifications` plugin, iOS 권한, 새 네이티브 모듈 변경 | 새 EAS iOS Build + TestFlight 제출 |
-| Edge Function 코드 변경 | `supabase functions deploy send-push` |
+| 일반 Edge Function 코드 변경 | `supabase functions deploy send-push` |
+| 잔소리 발송 Function 코드 변경 | `supabase functions deploy send-winner-nudge` |
 | 스키마/RLS 변경 | migration 생성 후 운영 DB 반영 |
 
 현재 OTA는 `production` 채널·runtime `1.0.3`에 배포되어 있다. OTA는 동일 runtime의 설치 빌드에만 적용된다.
 
-## 8. 다음 확장 순서
+## 9. 다음 확장 순서
 
 1. **특정 사용자 이벤트**: 댓글·답글·초대 등 이벤트가 생길 때 내부 서버가 `audience: "user"` 호출
 2. **전체 공지**: 관리자 운영 도구가 `audience: "all"` 호출
@@ -234,7 +294,7 @@ Function은 secret key가 있는 내부 호출자만 사용할 수 있다. 특�
 
 자동·전체 발송을 앱 클라이언트에서 직접 호출하게 만들지 않는다. 수신자 선택과 권한 판정은 반드시 신뢰할 수 있는 서버 작업에서 수행한다.
 
-## 9. 문제 해결 체크리스트
+## 10. 문제 해결 체크리스트
 
 | 증상 | 확인할 항목 |
 |---|---|
@@ -245,4 +305,3 @@ Function은 secret key가 있는 내부 호출자만 사용할 수 있다. 특�
 | Function이 400 | `audience`, UUID, 제목·본문 길이, 허용된 `data.route` 확인 |
 | Function 응답은 성공인데 기기 수신 실패 | 앱 권한, APNs credentials, Expo ticket/receipt, 기기 네트워크 확인 |
 | 푸시 탭 후 잘못된 화면 이동 | payload의 `data.route`가 허용 경로인지 확인 |
-

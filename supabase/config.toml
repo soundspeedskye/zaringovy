@@ -439,3 +439,15 @@ entrypoint = "./functions/send-push/index.ts"
 # Specifies static files to be bundled with the function. Supports glob patterns.
 # For example, if you want to serve static HTML pages in your function:
 # static_files = [ "./functions/send-push/*.html" ]
+
+[functions.send-winner-nudge]
+enabled = true
+verify_jwt = true
+import_map = "./functions/send-winner-nudge/deno.json"
+entrypoint = "./functions/send-winner-nudge/index.ts"
+
+[functions.deliver-room-notice-push]
+enabled = true
+verify_jwt = false
+import_map = "./functions/deliver-room-notice-push/deno.json"
+entrypoint = "./functions/deliver-room-notice-push/index.ts"

@@ -163,6 +163,13 @@ function shareAppSnapshot(previous: AppSnapshot | null, incoming: AppSnapshot): 
       (value) => `${value.postId}\u0000${value.userId}`,
     ),
     notifications: shareRecords(previous.notifications, incoming.notifications, (value) => value.id),
+    winnerNudgeGrants: previous.winnerNudgeGrants || incoming.winnerNudgeGrants
+      ? shareRecords(
+        previous.winnerNudgeGrants ?? [],
+        incoming.winnerNudgeGrants ?? [],
+        (value) => value.id,
+      )
+      : undefined,
     expenseExceptions: shareRecords(
       previous.expenseExceptions,
       incoming.expenseExceptions,

@@ -25,6 +25,8 @@ import {
 } from "@/entities/notification/api/use-notifications";
 import { useAppDialog } from "@/shared/providers/app-dialog-provider";
 import { formatDateLabel } from "@/shared/lib/format";
+import { WinnerNudgeSheet } from "@/features/winner-nudge/ui/winner-nudge-sheet";
+import { useAppActions } from "@/shared/providers/app-actions-provider";
 
 export const RoomHomeHeader = memo(function RoomHomeHeader({
   actions,
@@ -35,6 +37,7 @@ export const RoomHomeHeader = memo(function RoomHomeHeader({
 }) {
   const router = useRouter();
   const { showDialog } = useAppDialog();
+  const { sendWinnerNudge } = useAppActions();
   const unreadNotificationCount = useUnreadNotificationCount();
   const {
     activeRoom,
@@ -58,6 +61,7 @@ export const RoomHomeHeader = memo(function RoomHomeHeader({
     weekMonthLabel,
     weekDays,
     weekRangeLabel,
+    winnerNudgeGrant,
   } = data;
   const {
     addExpense,
@@ -69,6 +73,7 @@ export const RoomHomeHeader = memo(function RoomHomeHeader({
   } = actions;
   const isRoomOwner = activeRoom.ownerId === currentUser.id;
   const [peekDate, setPeekDate] = useState<string | null>(null);
+  const [winnerNudgeOpen, setWinnerNudgeOpen] = useState(false);
   // 시트가 히어로 카드를 가리지 않도록, 열 때 카드 아래 끝의 화면 좌표를 재서 넘긴다.
   // 날짜칩이 카드 안에 있으니 이 시점의 카드는 항상 화면에 있다.
   const [peekTopOffset, setPeekTopOffset] = useState<number | null>(null);
@@ -154,6 +159,7 @@ export const RoomHomeHeader = memo(function RoomHomeHeader({
           weekMonthLabel={weekMonthLabel}
           weekRangeLabel={weekRangeLabel}
           participants={memberRows}
+          onPressWinnerNudge={winnerNudgeGrant ? () => setWinnerNudgeOpen(true) : undefined}
           onPressWeekDay={openDailyExpensePeek}
           onPressSettings={
             isRoomOwner ? () => router.push("/room/edit") : undefined
@@ -170,6 +176,7 @@ export const RoomHomeHeader = memo(function RoomHomeHeader({
         topOffset={peekTopOffset}
         unreadExpenseIds={unreadExpenseIds}
       />
+      {winnerNudgeGrant ? <WinnerNudgeSheet grant={winnerNudgeGrant} members={memberRows} onClose={() => setWinnerNudgeOpen(false)} onSend={(body) => sendWinnerNudge({ roomId: activeRoom.id, body })} visible={winnerNudgeOpen} /> : null}
 
       <RecentExpenseCarousel
         commentCounts={commentCounts}
