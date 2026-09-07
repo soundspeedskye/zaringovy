@@ -18,6 +18,7 @@ import {
   parseRecoveryAuthLink,
   recoveryLinkError,
 } from "@/shared/lib/auth-link";
+import { disableCurrentPushNotificationsForUser } from "@/shared/services/push-notifications";
 
 type SessionContextValue = {
   loading: boolean;
@@ -272,6 +273,12 @@ export function SessionProvider({ children }: PropsWithChildren) {
   }, [session?.user.id]);
 
   const signOut = useCallback(async () => {
+    const userId = session?.user.id;
+    // 현재 기기만 끄므로 다른 기기에서 로그인 중인 사용자의 알림에는 영향을 주지
+    // 않는다. 토큰 정리 실패는 로그아웃을 막을 정도로 치명적이지 않다.
+    if (userId) {
+      await disableCurrentPushNotificationsForUser(userId).catch(() => undefined);
+    }
     const { error } = await getSupabaseClient().auth.signOut({
       scope: "local",
     });
@@ -280,7 +287,7 @@ export function SessionProvider({ children }: PropsWithChildren) {
     activeUserIdRef.current = null;
     accountChangeAllowedUntilRef.current = 0;
     setRecoveryMode(false);
-  }, []);
+  }, [session?.user.id]);
 
   const value = useMemo<SessionContextValue>(
     () => ({

@@ -10,10 +10,13 @@ import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { palette } from '@/shared/config/design';
 import { AppProvider } from '@/shared/providers/app-provider';
 import { AppDialogProvider } from '@/shared/providers/app-dialog-provider';
+import { PushNotificationProvider } from '@/shared/providers/push-notification-provider';
 import { cancelLegacyDeviceNotifications } from '@/shared/services/device-notification-cleanup';
+import { configurePushNotificationPresentation } from '@/shared/services/push-notifications';
 import { SessionProvider, useSession } from '@/shared/providers/session-provider';
 
 void SplashScreen.preventAutoHideAsync();
+configurePushNotificationPresentation();
 
 export default function RootLayout() {
   // 폰트 패밀리명은 이 map의 key로 등록된다(fonts.hand 토큰과 일치).
@@ -77,38 +80,40 @@ function AuthenticatedApp() {
     <AppProvider
       key={session?.user.id ?? 'signed-out'}
       sessionUserId={session?.user.id ?? null}>
-      <AppDialogProvider>
-        <StatusBar style="dark" />
-        {/*
-          fullScreenGestureEnabled: iOS 26은 기본값이 true지만 18 이하는 false라,
-          구버전에서는 화면 맨 왼쪽 가장자리에서만 스와이프 뒤로가기가 먹었다.
-          버전과 무관하게 화면 어디서나 밀어 뒤로 가도록 명시한다.
-          (대가: iOS 18 이하에서는 스와이프 전환이 simple_push가 되어 시차 효과가 빠진다)
-        */}
-        <Stack
-          screenOptions={{
-            headerShown: false,
-            fullScreenGestureEnabled: true,
-            contentStyle: { backgroundColor: palette.cream },
-          }}>
-          <Stack.Screen name="(auth)" />
-          <Stack.Screen name="(tabs)" />
-          <Stack.Screen name="room/create" options={{ presentation: 'modal' }} />
-          <Stack.Screen name="room/edit" options={{ presentation: 'modal' }} />
-          <Stack.Screen name="room/join" options={{ presentation: 'modal' }} />
-          <Stack.Screen name="room/leave" options={{ presentation: 'modal' }} />
-          <Stack.Screen name="community/[id]" />
-          <Stack.Screen name="community/new" options={{ presentation: 'modal' }} />
-          <Stack.Screen name="profile/edit" options={{ presentation: 'modal' }} />
-          <Stack.Screen name="account/delete" options={{ presentation: 'modal' }} />
-          <Stack.Screen name="expense/new" options={{ presentation: 'modal' }} />
-          <Stack.Screen name="expense/[id]" />
-          <Stack.Screen name="notifications" />
-          <Stack.Screen name="room/member/[userId]" />
-          <Stack.Screen name="history/index" />
-          <Stack.Screen name="history/[id]" />
-        </Stack>
-      </AppDialogProvider>
+      <PushNotificationProvider userId={session?.user.id ?? null}>
+        <AppDialogProvider>
+          <StatusBar style="dark" />
+          {/*
+            fullScreenGestureEnabled: iOS 26은 기본값이 true지만 18 이하는 false라,
+            구버전에서는 화면 맨 왼쪽 가장자리에서만 스와이프 뒤로가기가 먹었다.
+            버전과 무관하게 화면 어디서나 밀어 뒤로 가도록 명시한다.
+            (대가: iOS 18 이하에서는 스와이프 전환이 simple_push가 되어 시차 효과가 빠진다)
+          */}
+          <Stack
+            screenOptions={{
+              headerShown: false,
+              fullScreenGestureEnabled: true,
+              contentStyle: { backgroundColor: palette.cream },
+            }}>
+            <Stack.Screen name="(auth)" />
+            <Stack.Screen name="(tabs)" />
+            <Stack.Screen name="room/create" options={{ presentation: 'modal' }} />
+            <Stack.Screen name="room/edit" options={{ presentation: 'modal' }} />
+            <Stack.Screen name="room/join" options={{ presentation: 'modal' }} />
+            <Stack.Screen name="room/leave" options={{ presentation: 'modal' }} />
+            <Stack.Screen name="community/[id]" />
+            <Stack.Screen name="community/new" options={{ presentation: 'modal' }} />
+            <Stack.Screen name="profile/edit" options={{ presentation: 'modal' }} />
+            <Stack.Screen name="account/delete" options={{ presentation: 'modal' }} />
+            <Stack.Screen name="expense/new" options={{ presentation: 'modal' }} />
+            <Stack.Screen name="expense/[id]" />
+            <Stack.Screen name="notifications" />
+            <Stack.Screen name="room/member/[userId]" />
+            <Stack.Screen name="history/index" />
+            <Stack.Screen name="history/[id]" />
+          </Stack>
+        </AppDialogProvider>
+      </PushNotificationProvider>
     </AppProvider>
   );
 }
