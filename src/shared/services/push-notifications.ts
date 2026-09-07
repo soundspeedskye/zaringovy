@@ -1,3 +1,4 @@
+import * as Application from 'expo-application';
 import Constants from 'expo-constants';
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
@@ -45,25 +46,49 @@ export async function registerPushNotificationsForUser(
 export async function syncPushToken(userId: string, token: string): Promise<void> {
   if (!supportsPushNotifications()) return;
 
+  const deviceId = await getPushDeviceId();
   const client = getSupabaseClient();
-  // device_push_tokens의 UPDATE 권한은 user_id를 제외한 열에만 있다. upsert는
-  // 충돌 시 user_id까지 갱신하려 하므로, 먼저 자기 토큰을 조회해 INSERT와 UPDATE를
-  // 분리한다. RLS가 다른 계정의 토큰 행을 돌려주지 않는 것도 함께 보장된다.
-  const { data: existing, error: readError } = await client
+  // 같은 사용자·플랫폼·기기 조합은 한 행만 유지한다. 토큰은 앱 재설치나 APNs 환경
+  // 전환으로 바뀔 수 있으므로 기기를 기준으로 찾아 최신 토큰으로 갱신한다.
+  const { data: existingByDevice, error: deviceReadError } = await client
     .from('device_push_tokens')
     .select('id')
-    .eq('token', token)
+    .eq('user_id', userId)
+    .eq('platform', 'ios')
+    .eq('device_id', deviceId)
     .maybeSingle();
-  if (readError) throw readError;
+  if (deviceReadError) throw deviceReadError;
 
   const record = {
     platform: 'ios',
+    device_id: deviceId,
+    token,
     is_enabled: true,
     last_seen_at: new Date().toISOString(),
   };
-  const { error } = existing
-    ? await client.from('device_push_tokens').update(record).eq('id', existing.id)
-    : await client.from('device_push_tokens').insert({ user_id: userId, token, ...record });
+
+  if (existingByDevice) {
+    const { error } = await client
+      .from('device_push_tokens')
+      .update(record)
+      .eq('id', existingByDevice.id);
+    if (error) throw error;
+    return;
+  }
+
+  // 기존 앱 버전이 device_id 없이 저장한 현재 토큰은 같은 행을 이어서 쓴다. 따라서
+  // 새 버전이 처음 실행돼도 토큰 행이 불필요하게 하나 더 생기지 않는다.
+  const { data: legacyToken, error: legacyReadError } = await client
+    .from('device_push_tokens')
+    .select('id')
+    .eq('user_id', userId)
+    .eq('token', token)
+    .maybeSingle();
+  if (legacyReadError) throw legacyReadError;
+
+  const { error } = legacyToken
+    ? await client.from('device_push_tokens').update(record).eq('id', legacyToken.id)
+    : await client.from('device_push_tokens').insert({ user_id: userId, ...record });
   if (error) throw error;
 }
 
@@ -113,4 +138,17 @@ async function getExpoPushToken(): Promise<string> {
   if (!projectId) throw new Error('EAS 프로젝트 ID를 찾지 못해 푸시 토큰을 등록할 수 없어요.');
 
   return (await Notifications.getExpoPushTokenAsync({ projectId })).data;
+}
+
+/**
+ * IDFV는 같은 앱 공급자의 동일 iOS 기기를 구분한다. 기기 재시작 직후 잠금 상태에서는
+ * 일시적으로 null일 수 있으므로, 그 경우에는 다음 앱 실행에서 토큰 등록을 재시도한다.
+ */
+async function getPushDeviceId(): Promise<string> {
+  const identifierForVendor = await Application.getIosIdForVendorAsync();
+  if (!identifierForVendor) {
+    throw new Error('iOS 기기 식별자를 아직 가져오지 못해 푸시 토큰 등록을 다시 시도해야 해요.');
+  }
+
+  return `ios:${identifierForVendor}`;
 }
