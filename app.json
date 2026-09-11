@@ -2,7 +2,7 @@
   "expo": {
     "name": "자링고비",
     "slug": "zaringovy",
-    "version": "1.0.3",
+    "version": "1.0.4",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "zaringovy",
