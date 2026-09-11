@@ -451,3 +451,9 @@ enabled = true
 verify_jwt = false
 import_map = "./functions/deliver-room-notice-push/deno.json"
 entrypoint = "./functions/deliver-room-notice-push/index.ts"
+
+[functions.deliver-engagement-nudges]
+enabled = true
+verify_jwt = false
+import_map = "./functions/deliver-engagement-nudges/deno.json"
+entrypoint = "./functions/deliver-engagement-nudges/index.ts"

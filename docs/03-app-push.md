@@ -1,7 +1,7 @@
 # 앱 푸시 적용·운영 가이드
 
-- 문서 상태: iOS 1차 구현 완료
-- 최종 반영: 2026-09-07
+- 문서 상태: iOS 1차 구현 + 24시간 활동 리마인더 코드 완료
+- 최종 반영: 2026-09-11
 - 대상: iOS / Expo Push Service / Supabase Edge Functions
 - 현재 iOS OTA 그룹: `8c4068d7-18b3-4b25-8fa6-d852995ff89e`
 
@@ -20,8 +20,9 @@
 | 특정 사용자·전체 발송 | 준비 완료 | 내부 서비스 또는 크론이 Function을 호출 |
 | 지난 주차 1위 잔소리 | 완료 | 정산 결과 기반 발송권·소식함·기기 푸시까지 연결 |
 | 방 공지 자동 푸시 | 완료 | 공지 소식함 행을 기준으로 같은 방 수신자 기기에 전달 |
+| 24시간 활동 리마인더 | 구현 완료 | 앱 미접속·게시글 미작성 상태를 DB에서 판정해 KST 09:00~21:00에 1회 전송 |
 | 댓글·답글 자동 푸시 | 미구현 | `notifications` 이벤트 dispatcher를 별도 연결 예정 |
-| 예약 발송 | 미구현 | 제품 이벤트와 시간 규칙을 정한 뒤 연결 |
+| 푸시 탭 이동 | 완료 | 모든 원격 푸시를 앱 홈으로 이동 |
 | Android FCM | 미구현 | Android 작업 시 Firebase FCM v1 설정 필요 |
 
 ## 2. 전체 구조
@@ -39,7 +40,7 @@ flowchart LR
     H --> I[APNs]
     N --> G
     I --> J[iOS 기기 알림]
-    J --> K[알림 탭 시 허용된 앱 경로로 이동]
+    J --> K[알림 탭 시 앱 홈으로 이동]
 ```
 
 발송 서버는 APNs에 직접 연결하지 않는다. `send-push`가 Expo Push API로 Expo Push Token을 보내면, Expo가 iOS는 APNs로 전달한다. Android를 추가할 때도 앱과 서버의 발송 인터페이스는 유지하고 Expo가 FCM으로 전달한다.
@@ -187,16 +188,17 @@ token LIKE 'ExponentPushToken[%]'
 
 원시 APNs 16진수 토큰은 Expo Push API에 전송되지 않는다. 발송은 Expo 제한에 맞춰 요청당 100개씩 분할한다.
 
-딥링크 데이터도 서버에서 제한한다.
+기존 발송 API의 payload 경로 데이터는 호환성을 위해 제한해서 받지만, 현재 앱은 어떤 payload든 탭하면 홈으로 이동한다.
 
 | 허용 값 | 용도 |
 |---|---|
+| `/` | 앱 홈 (현재 모든 푸시 탭의 최종 목적지) |
 | `/notifications` | 알림함 |
 | `/expense/<id>` | 지출 상세 |
 | `/community/<id>` | 커뮤니티 글 상세 |
 | `commentId` | 지출 상세 경로에만 허용 |
 
-앱에서도 같은 경로를 다시 검증하므로, 외부 URL이나 임의 앱 경로를 push payload로 열 수 없다.
+따라서 외부 URL이나 임의 앱 경로를 push payload로 열 수 없다.
 
 ### 5.4 발송 결과와 토큰 비활성화
 
@@ -225,7 +227,7 @@ Function은 secret key가 있는 내부 호출자만 사용할 수 있다. 특�
 
 1. Android와 iPhone 계정을 같은 방의 활성 멤버로 준비한다. 공지 작성자는 수신 대상에서 제외된다.
 2. Android의 방장이 공지를 작성한다.
-3. iPhone에서 `새 공지` 알림이 표시되고, 탭하면 해당 공지 상세로 이동하는지 확인한다.
+3. iPhone에서 `새 공지` 알림이 표시되고, 탭하면 앱 홈으로 이동하는지 확인한다.
 4. iPhone 소식함에도 기존 공지 소식이 한 번만 쌓였는지 확인한다.
 
 공지 푸시는 `notifications.kind = 'room_notice'` 행마다 DB webhook이 `deliver-room-notice-push` Edge Function을 호출해 전송한다. Function은 해당 소식의 수신자 토큰만 조회하므로 방 외부 사용자나 공지 작성자에게는 전달되지 않는다.
@@ -271,12 +273,27 @@ flowchart LR
 
 1. 정산이 끝난 테스트 방에서 단독 또는 공동 1위 계정으로 로그인한다.
 2. 히어로 카드 제목 아래에 `지난 주차 1위! · 잔소리`가 나타나는지 확인한다.
-3. 문구를 입력해 보낸다. 같은 방의 다른 활성 참여자 기기에서 알림을 받고, 탭하면 소식함으로 이동하는지 확인한다.
+3. 문구를 입력해 보낸다. 같은 방의 다른 활성 참여자 기기에서 알림을 받고, 탭하면 앱 홈으로 이동하는지 확인한다.
 4. 수신자 소식함에 `보낸 사람님의 잔소리: 문구`가 쌓였는지 확인한다.
 5. 보낸 직후 발송 버튼이 비활성화되고 `30분 뒤에 다음 잔소리를 보낼 수 있습니다.`가 나타나는지 확인한다.
 6. 단독 1위는 날짜 기준 10회 제한, 공동 1위는 1회 제한도 확인한다.
 
-## 8. 배포 규칙
+## 8. 24시간 활동 리마인더
+
+활성 방 멤버 중에서 전역·방별 알림을 허용하고, 활성 Expo 토큰이 있는 사용자만 대상이다. 앱을 열거나 게시글·투표를 작성하면 활동 기준 시각이 갱신된다. 두 활동 모두 24시간 이상 없을 때 KST 09:00~21:00 사이에 한 번만 원격 푸시를 보낸다. 푸시를 탭하면 payload와 관계없이 홈으로 이동한다.
+
+관련 파일:
+
+- `supabase/migrations/20260911012815_engagement_reminders.sql`
+- `supabase/functions/deliver-engagement-nudges/index.ts`
+- `src/shared/services/engagement-activity.ts`
+- `src/shared/providers/push-notification-provider.tsx`
+
+`private.user_engagement_state`가 마지막 앱 활동·게시글 시각을 보관하고, `private.engagement_nudge_events`가 중복 방지·선점·발송 상태를 보관한다. Supabase Cron이 5분마다 대상자를 선점한 뒤 `deliver-engagement-nudges`가 Expo Push API를 호출한다. DB 트랜잭션 안에서 외부 HTTP를 호출하지 않으며, worker가 큐를 가져간 뒤 토큰별로 전송한다.
+
+기존 방 공지와 동일하게 Vault의 `room_notice_push_api_key`를 사용한다. 운영 DB에 migration을 반영하고 Function을 배포하면 Cron이 자동으로 동작한다. 기존 사용자에게는 migration 시각부터 24시간의 유예가 있다.
+
+## 9. 배포 규칙
 
 | 변경 | 필요한 배포 |
 |---|---|
@@ -284,21 +301,21 @@ flowchart LR
 | `expo-notifications` plugin, iOS 권한, 새 네이티브 모듈 변경 | 새 EAS iOS Build + TestFlight 제출 |
 | 일반 Edge Function 코드 변경 | `supabase functions deploy send-push` |
 | 잔소리 발송 Function 코드 변경 | `supabase functions deploy send-winner-nudge` |
+| 24시간 리마인더 Function 코드 변경 | `supabase functions deploy deliver-engagement-nudges` |
 | 스키마/RLS 변경 | migration 생성 후 운영 DB 반영 |
 
 현재 OTA는 `production` 채널·runtime `1.0.3`에 배포되어 있다. OTA는 동일 runtime의 설치 빌드에만 적용된다.
 
-## 9. 다음 확장 순서
+## 10. 다음 확장 순서
 
 1. **특정 사용자 이벤트**: 댓글·답글·초대 등 이벤트가 생길 때 내부 서버가 `audience: "user"` 호출
 2. **전체 공지**: 관리자 운영 도구가 `audience: "all"` 호출
 3. **영수증 처리**: ticket ID 저장 테이블과 receipt worker를 추가해 죽은 토큰 자동 비활성화 강화
-4. **예약 발송**: 발송 예약 테이블 + Supabase Cron으로 정해진 시각에 `send-push` 호출
-5. **Android**: Firebase FCM v1 자격증명 설정, Android 기기 식별자 처리, 실기기 수신 테스트
+4. **Android**: Firebase FCM v1 자격증명 설정, Android 기기 식별자 처리, 실기기 수신 테스트
 
 자동·전체 발송을 앱 클라이언트에서 직접 호출하게 만들지 않는다. 수신자 선택과 권한 판정은 반드시 신뢰할 수 있는 서버 작업에서 수행한다.
 
-## 10. 문제 해결 체크리스트
+## 11. 문제 해결 체크리스트
 
 | 증상 | 확인할 항목 |
 |---|---|
@@ -309,4 +326,4 @@ flowchart LR
 | Function이 502 | `service_role`의 푸시용 최소 테이블 권한과 DB webhook의 Vault key 존재 여부 확인 |
 | Function이 400 | `audience`, UUID, 제목·본문 길이, 허용된 `data.route` 확인 |
 | Function 응답은 성공인데 기기 수신 실패 | 앱 권한, APNs credentials, Expo ticket/receipt, 기기 네트워크 확인 |
-| 푸시 탭 후 잘못된 화면 이동 | payload의 `data.route`가 허용 경로인지 확인 |
+| 푸시 탭 후 홈으로 가지 않음 | 최신 OTA 적용 여부와 `PushNotificationProvider`의 응답 listener 확인 |

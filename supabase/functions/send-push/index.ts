@@ -138,7 +138,8 @@ function parseNotificationData(value: unknown):
 }
 
 function isSupportedRoute(route: string): boolean {
-  return route === "/notifications"
+  return route === "/"
+    || route === "/notifications"
     || /^\/expense\/[^/]+$/.test(route)
     || /^\/community\/[^/]+$/.test(route);
 }
