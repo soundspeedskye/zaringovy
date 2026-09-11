@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { AnimalAvatar } from '@/shared/ui/animal-avatar';
 import { UnreadDot } from '@/shared/ui/unread-dot';
+import { WinnerCrownIcon } from '@/shared/ui/winner-crown-icon';
 import { fonts, palette, spacing, tabularNums } from '@/shared/config/design';
 import { formatWon } from '@/shared/lib/format';
 
@@ -69,8 +70,8 @@ export const MemberList = memo(function MemberList({
             )}
             <View style={styles.copy}>
               <View style={styles.nameRow}>
+                {member.isCrowned ? <WinnerCrownIcon size={18} /> : null}
                 <Text numberOfLines={1} style={styles.name}>
-                  {member.isCrowned ? '👑 ' : ''}
                   {member.isCurrentUser ? '나' : member.nickname}
                 </Text>
                 {member.isLateJoiner ? (
