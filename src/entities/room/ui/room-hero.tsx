@@ -83,7 +83,7 @@ export function RoomHero({
           {daysRemaining <= 0 ? "오늘 종료" : `D-${daysRemaining}`} | {weekMonthLabel}
         </Text>
       </View>
-      <View style={[styles.titleRow, onPressWinnerNudge && styles.titleRowWithNudge]}>
+      <View style={styles.titleRow}>
         <Text numberOfLines={1} style={styles.title}>
           {title}
         </Text>
@@ -106,12 +106,6 @@ export function RoomHero({
           </Pressable>
         ) : null}
       </View>
-      {onPressWinnerNudge ? (
-        <View style={styles.winnerNudgeRow}>
-          <View style={styles.winnerNudgeLabel}><WinnerCrownIcon size={22} /><Text style={styles.winnerNudgeText}>지난 주차 1위!</Text></View>
-          <Pressable accessibilityLabel="잔소리 보내기" accessibilityRole="button" onPress={onPressWinnerNudge} style={styles.winnerNudgeButton}><Text style={styles.winnerNudgeButtonText}>잔소리 ›</Text></Pressable>
-        </View>
-      ) : null}
       <View style={styles.summary}>
         <View style={styles.ringWrap}>
           <Svg
@@ -141,21 +135,29 @@ export function RoomHero({
             />
           </Svg>
           <View pointerEvents="none" style={styles.ringLabel}>
-            <Text numberOfLines={1} style={styles.remainingValue}>
-              {formatWon(Math.abs(remaining), false)}
-            </Text>
-            <Text style={styles.remainingLabel}>
-              {remaining < 0 ? "초과" : "남음"}
+            <Text
+              accessibilityLabel={`챌린지 기본 금액 ${formatWon(appliedLimit)}`}
+              adjustsFontSizeToFit
+              numberOfLines={1}
+              style={styles.ringLimitValue}
+            >
+              {formatWon(appliedLimit)}
             </Text>
           </View>
         </View>
-        <View style={styles.limitCopy}>
+        <View style={styles.remainingCopy}>
+          {onPressWinnerNudge ? (
+            <View style={styles.winnerNudgeRow}>
+              <View style={styles.winnerNudgeLabel}><WinnerCrownIcon size={22} /><Text style={styles.winnerNudgeText}>지난 주차 1위!</Text></View>
+            </View>
+          ) : null}
           <Text
+            accessibilityLabel={remaining < 0 ? `${formatWon(Math.abs(remaining))} 초과` : `남은 금액 ${formatWon(remaining)}`}
             adjustsFontSizeToFit
             numberOfLines={1}
-            style={styles.limitValue}
+            style={styles.remainingValue}
           >
-            {formatWon(appliedLimit)}
+            {formatWon(remaining)}
           </Text>
           <View accessibilityLabel={weekRangeLabel} style={styles.weekStrip}>
             {weekDays.map((weekDay) => {
@@ -201,6 +203,30 @@ export function RoomHero({
               );
             })}
           </View>
+          <View style={styles.memberActions}>
+            {onPressWinnerNudge ? (
+              <Pressable accessibilityLabel="잔소리 보내기" accessibilityRole="button" hitSlop={4} onPress={onPressWinnerNudge} style={styles.winnerNudgeButton}><Text adjustsFontSizeToFit numberOfLines={1} style={styles.winnerNudgeButtonText}>잔소리 ›</Text></Pressable>
+            ) : null}
+            <View
+              accessibilityLabel={`함께하는 멤버 ${participants.length}명`}
+              style={styles.avatarStack}
+            >
+              {participants.slice(0, 5).map((participant, index) => (
+                <AnimalAvatar
+                  key={participant.id}
+                  photoUri={participant.avatarUri}
+                  size={26}
+                  style={[styles.memberAvatar, index > 0 && styles.memberAvatarOverlap]}
+                  value={participant.avatar}
+                />
+              ))}
+              {participants.length > 5 ? (
+                <View style={[styles.moreMembers, styles.memberAvatarOverlap]}>
+                  <Text style={styles.moreMembersText}>+{participants.length - 5}</Text>
+                </View>
+              ) : null}
+            </View>
+          </View>
           {hasPending ? (
             <Text style={styles.pendingText}>
               임시 합계 {formatWon(spent + pendingDelta)} ·{" "}
@@ -211,25 +237,7 @@ export function RoomHero({
           ) : null}
         </View>
       </View>
-      <View
-        accessibilityLabel={`함께하는 멤버 ${participants.length}명`}
-        style={styles.avatarStack}
-      >
-        {participants.slice(0, 5).map((participant, index) => (
-          <AnimalAvatar
-            key={participant.id}
-            photoUri={participant.avatarUri}
-            size={26}
-            style={[styles.memberAvatar, index > 0 && styles.memberAvatarOverlap]}
-            value={participant.avatar}
-          />
-        ))}
-        {participants.length > 5 ? (
-          <View style={[styles.moreMembers, styles.memberAvatarOverlap]}>
-            <Text style={styles.moreMembersText}>+{participants.length - 5}</Text>
-          </View>
-        ) : null}
-      </View>
+
     </View>
   );
 }
@@ -243,7 +251,7 @@ const styles = StyleSheet.create({
     position: "relative",
     paddingHorizontal: spacing.xl,
     paddingTop: spacing.xl,
-    paddingBottom: 42,
+    paddingBottom: spacing.xl,
     borderRadius: radii.xl,
     backgroundColor: palette.green,
     ...shadow,
@@ -274,13 +282,12 @@ const styles = StyleSheet.create({
     marginTop: 12,
     marginBottom: 22,
   },
-  titleRowWithNudge: { marginBottom: spacing.sm },
-  winnerNudgeRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: spacing.lg },
+  winnerNudgeRow: { flexDirection: "row", alignItems: "center", justifyContent: "flex-end", marginBottom: spacing.sm },
   winnerNudgeLabel: { flexDirection: "row", alignItems: "center", gap: spacing.xs },
   winnerNudgeText: { color: palette.cream, fontFamily: fonts.handBold, fontSize: 14 },
-  winnerNudgeButton: { paddingHorizontal: spacing.md, paddingVertical: 7, borderRadius: radii.pill, backgroundColor: "rgba(255,255,255,0.14)", borderWidth: 1, borderColor: "rgba(253,246,227,0.32)" },
+  winnerNudgeButton: { flexShrink: 1, paddingVertical: 7 },
   winnerNudgeButtonText: { color: palette.cream, fontFamily: fonts.handBold, fontSize: 13 },
-  summary: { flexDirection: "row", alignItems: "center", gap: spacing.xl },
+  summary: { flexDirection: "row", alignItems: "center", gap: spacing.md },
   ringWrap: {
     width: ringSize,
     height: ringSize,
@@ -293,7 +300,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     inset: 0,
   },
-  remainingValue: {
+  ringLimitValue: {
     color: palette.cream,
     fontFamily: fonts.number,
     fontSize: 16,
@@ -301,13 +308,7 @@ const styles = StyleSheet.create({
     maxWidth: 86,
     ...tabularNums,
   },
-  remainingLabel: {
-    color: palette.cream,
-    fontFamily: fonts.hand,
-    fontSize: 13,
-    marginTop: 2,
-  },
-  limitCopy: { flex: 1, minWidth: 0 },
+  remainingCopy: { flex: 1, minWidth: 0 },
   weekStrip: { flexDirection: "row", gap: 4, marginTop: spacing.sm },
   weekDayButton: { flex: 1, borderRadius: radii.md },
   weekDayButtonPressed: { opacity: 0.78, transform: [{ scale: 0.96 }] },
@@ -328,7 +329,7 @@ const styles = StyleSheet.create({
   weekDayIn: { color: palette.cream },
   weekDayToday: { color: palette.white, fontWeight: "700", fontSize: 16 },
   weekDayHoliday: { color: palette.coral },
-  limitValue: {
+  remainingValue: {
     color: palette.cream,
     fontFamily: fonts.number,
     fontSize: 28,
@@ -336,10 +337,14 @@ const styles = StyleSheet.create({
     textAlign: "right",
     ...tabularNums,
   },
+  memberActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "flex-end",
+    gap: spacing.md,
+    marginTop: spacing.sm,
+  },
   avatarStack: {
-    position: "absolute",
-    right: spacing.xl,
-    bottom: spacing.lg,
     flexDirection: "row",
     alignItems: "center",
   },
