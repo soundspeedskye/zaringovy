@@ -1,9 +1,10 @@
 import * as Application from 'expo-application';
 import Constants from 'expo-constants';
-import * as Notifications from 'expo-notifications';
+import type { NotificationPermissionsStatus } from 'expo-notifications';
 import { Platform } from 'react-native';
 
 import { getSupabaseClient } from '@/shared/api/supabase-client';
+import { getNotificationModule } from '@/shared/services/notification-module';
 
 type RegistrationResult = 'registered' | 'denied' | 'unsupported';
 
@@ -15,6 +16,7 @@ export function supportsPushNotifications(): boolean {
 /** 포그라운드에서도 서버 푸시를 배너와 알림 목록에 표시한다. */
 export function configurePushNotificationPresentation(): void {
   if (!supportsPushNotifications()) return;
+  const Notifications = getNotificationModule();
   Notifications.setNotificationHandler({
     handleNotification: async () => ({
       shouldShowBanner: true,
@@ -65,6 +67,7 @@ export async function disableCurrentPushNotificationsForUser(
 ): Promise<void> {
   if (!supportsPushNotifications()) return;
 
+  const Notifications = getNotificationModule();
   const permission = await Notifications.getPermissionsAsync();
   if (!hasPushPermission(permission)) return;
 
@@ -78,6 +81,7 @@ export async function disableCurrentPushNotificationsForUser(
 }
 
 async function ensurePushPermission(): Promise<boolean> {
+  const Notifications = getNotificationModule();
   const current = await Notifications.getPermissionsAsync();
   if (hasPushPermission(current)) return true;
 
@@ -88,8 +92,9 @@ async function ensurePushPermission(): Promise<boolean> {
 }
 
 function hasPushPermission(
-  permission: Notifications.NotificationPermissionsStatus,
+  permission: NotificationPermissionsStatus,
 ): boolean {
+  const Notifications = getNotificationModule();
   const status = permission.ios?.status;
   return status === Notifications.IosAuthorizationStatus.AUTHORIZED
     || status === Notifications.IosAuthorizationStatus.PROVISIONAL
@@ -97,6 +102,7 @@ function hasPushPermission(
 }
 
 async function getExpoPushToken(): Promise<string> {
+  const Notifications = getNotificationModule();
   const projectId = Constants.expoConfig?.extra?.eas?.projectId
     ?? Constants.easConfig?.projectId;
   if (!projectId) throw new Error('EAS 프로젝트 ID를 찾지 못해 푸시 토큰을 등록할 수 없어요.');

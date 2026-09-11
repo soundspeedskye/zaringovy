@@ -1,5 +1,7 @@
-import * as Notifications from 'expo-notifications';
+import { isRunningInExpoGo } from 'expo';
 import { Platform } from 'react-native';
+
+import { getNotificationModule } from '@/shared/services/notification-module';
 
 /**
  * 기기 로컬 알림은 모두 걷어냈고, 이전 빌드가 남긴 예약만 정리한다.
@@ -14,5 +16,8 @@ import { Platform } from 'react-native';
  */
 export async function cancelLegacyDeviceNotifications(): Promise<void> {
   if (Platform.OS === 'web') return;
+  // Expo Go에는 독립 앱의 이전 예약이 없고, Android에서는 모듈 import도 실패한다.
+  if (isRunningInExpoGo()) return;
+  const Notifications = getNotificationModule();
   await Notifications.cancelAllScheduledNotificationsAsync();
 }

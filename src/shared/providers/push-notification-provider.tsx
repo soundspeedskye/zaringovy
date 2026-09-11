@@ -1,16 +1,22 @@
-import * as Notifications from 'expo-notifications';
+import type { NotificationResponse } from 'expo-notifications';
 import { useRouter } from 'expo-router';
 import type { PropsWithChildren } from 'react';
 import { useEffect, useRef } from 'react';
+import { AppState, type AppStateStatus } from 'react-native';
 
 import { pushNotificationDestination } from '@/shared/lib/push-notification-destination';
+import { recordAppActivity } from '@/shared/services/engagement-activity';
+import { getNotificationModule } from '@/shared/services/notification-module';
 import {
   registerPushNotificationsForUser,
   supportsPushNotifications,
   syncPushToken,
 } from '@/shared/services/push-notifications';
 
-/** 로그인 세션에 연결된 기기 토큰과 알림 탭 이동을 관리한다. */
+const activityHeartbeatMs = 15 * 60 * 1000;
+const activityWriteIntervalMs = 5 * 60 * 1000;
+
+/** 로그인 세션에 연결된 활동·기기 토큰과 알림 탭 이동을 관리한다. */
 export function PushNotificationProvider({
   children,
   userId,
@@ -19,7 +25,38 @@ export function PushNotificationProvider({
   const handledInitialResponse = useRef(false);
 
   useEffect(() => {
+    if (!userId) return;
+
+    let lastRecordedAt = 0;
+    let disposed = false;
+
+    const record = () => {
+      const now = Date.now();
+      if (now - lastRecordedAt < activityWriteIntervalMs) return;
+      lastRecordedAt = now;
+      void recordAppActivity().catch(() => {
+        if (!disposed) lastRecordedAt = 0;
+      });
+    };
+
+    record();
+    const subscription = AppState.addEventListener('change', (status: AppStateStatus) => {
+      if (status === 'active') record();
+    });
+    const heartbeat = setInterval(() => {
+      if (AppState.currentState === 'active') record();
+    }, activityHeartbeatMs);
+
+    return () => {
+      disposed = true;
+      subscription.remove();
+      clearInterval(heartbeat);
+    };
+  }, [userId]);
+
+  useEffect(() => {
     if (!userId || !supportsPushNotifications()) return;
+    const Notifications = getNotificationModule();
 
     // 토큰 등록 실패가 앱 시작을 막아서는 안 된다. 다음 앱 실행·토큰 교체 때
     // 다시 시도하며, 실제 원인은 개발 빌드의 로그에서 확인할 수 있다.
@@ -33,14 +70,14 @@ export function PushNotificationProvider({
 
   useEffect(() => {
     if (!userId || !supportsPushNotifications()) return;
+    const Notifications = getNotificationModule();
 
-    const open = (response: Notifications.NotificationResponse): boolean => {
+    const open = (response: NotificationResponse): boolean => {
       if (response.actionIdentifier !== Notifications.DEFAULT_ACTION_IDENTIFIER) return false;
       const destination = pushNotificationDestination(
         response.notification.request.content.data,
       );
-      if (!destination) return false;
-      router.push(destination as never);
+      router.replace(destination as never);
       return true;
     };
 
