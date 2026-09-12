@@ -3,9 +3,11 @@ import "@supabase/functions-js/edge-runtime.d.ts";
 import { withSupabase } from "@supabase/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-const expoPushEndpoint = "https://exp.host/--/api/v2/push/send";
-const expoPushBatchSize = 100;
-const expoPushTokenPattern = /^ExponentPushToken\[[^\]]+\]$/;
+import {
+  isFcmToken,
+  sendFcmMessages,
+  type FcmTokenRow,
+} from "../_shared/fcm.ts";
 
 type NudgeEvent = {
   id: string;
@@ -14,17 +16,14 @@ type NudgeEvent = {
   reference_at: string;
 };
 
-type PushToken = { id: string; user_id: string; token: string };
-type ExpoPushTicket = { status?: unknown; details?: { error?: unknown } | null };
-type ExpoMessage = {
+type PushToken = FcmTokenRow & { user_id: string };
+type EngagementMessage = PushToken & {
   eventId: string;
-  tokenId: string;
-  token: string;
   title: string;
   body: string;
 };
 
-/** Cron이 만든 리마인더 큐를 가져와 Expo Push Service로 전달하는 내부 worker. */
+/** Cron이 만든 리마인더 큐를 가져와 FCM HTTP v1로 전달하는 내부 worker. */
 export default {
   fetch: withSupabase({ auth: "secret" }, async (request, ctx) => {
     if (request.method !== "POST") {
@@ -38,30 +37,33 @@ export default {
         return Response.json({ claimed: 0, attempted: 0, accepted: 0, rejected: 0, disabled: 0 });
       }
 
-      const tokens = await findActiveExpoTokens(
+      const tokens = await findActiveFcmTokens(
         ctx.supabaseAdmin,
         [...new Set(claimed.map((event) => event.user_id))],
       );
-      const messages = claimed.flatMap((event) => {
+      const messages: EngagementMessage[] = claimed.flatMap((event) => {
         const copy = nudgeCopy(event.reason);
         return tokens
           .filter((token) => token.user_id === event.user_id)
           .map((token) => ({
+            ...token,
             eventId: event.id,
-            tokenId: token.id,
-            token: token.token,
             ...copy,
           }));
       });
       const attemptedEventIds = new Set(messages.map((message) => message.eventId));
-      const delivery = await sendExpoMessages(messages);
+      const delivery = await sendFcmMessages(messages, (message) => ({
+        title: message.title,
+        body: message.body,
+        data: { route: "/" },
+      }));
 
       if (delivery.invalidTokenIds.length > 0) {
         const { error } = await ctx.supabaseAdmin
           .from("device_push_tokens")
           .update({ is_enabled: false })
           .in("id", delivery.invalidTokenIds);
-        // Expo 요청이 성공한 뒤 토큰 정리만 일시적으로 실패해도 리마인더는 성공 처리한다.
+        // FCM 요청이 성공한 뒤 토큰 정리만 일시적으로 실패해도 리마인더는 성공 처리한다.
         if (error) console.error("engagement_nudge_token_cleanup_failed", { type: errorName(error) });
       }
 
@@ -102,15 +104,15 @@ async function claimEvents(admin: SupabaseClient): Promise<NudgeEvent[]> {
   return (data ?? []) as NudgeEvent[];
 }
 
-async function findActiveExpoTokens(admin: SupabaseClient, userIds: string[]): Promise<PushToken[]> {
+async function findActiveFcmTokens(admin: SupabaseClient, userIds: string[]): Promise<PushToken[]> {
   const { data, error } = await admin
     .from("device_push_tokens")
     .select("id,user_id,token")
     .eq("is_enabled", true)
-    .like("token", "ExponentPushToken[%]")
+    .in("platform", ["ios", "android"])
     .in("user_id", userIds);
   if (error) throw error;
-  return ((data ?? []) as PushToken[]).filter(({ token }) => expoPushTokenPattern.test(token));
+  return ((data ?? []) as PushToken[]).filter(({ token }) => isFcmToken(token));
 }
 
 async function completeEvents(
@@ -154,54 +156,6 @@ function nudgeCopy(reason: NudgeEvent["reason"]): { title: string; body: string 
       title: "다시 만나요",
       body: "24시간 동안 앱에 들르지 않았어요. 오늘의 기록을 확인해 보세요.",
     };
-}
-
-async function sendExpoMessages(messages: ExpoMessage[]): Promise<{
-  acceptedCount: number;
-  rejectedCount: number;
-  invalidTokenIds: string[];
-}> {
-  const invalidTokenIds: string[] = [];
-  let acceptedCount = 0;
-  let rejectedCount = 0;
-
-  for (let index = 0; index < messages.length; index += expoPushBatchSize) {
-    const batch = messages.slice(index, index + expoPushBatchSize);
-    const response = await fetch(expoPushEndpoint, {
-      method: "POST",
-      headers: { accept: "application/json", "content-type": "application/json" },
-      body: JSON.stringify(batch.map((message) => ({
-        to: message.token,
-        sound: "default",
-        title: message.title,
-        body: message.body,
-        data: { route: "/" },
-      }))),
-    });
-    if (!response.ok) throw new Error(`expo_push_http_${response.status}`);
-
-    const payload = await response.json() as { data?: unknown };
-    if (!Array.isArray(payload.data) || payload.data.length !== batch.length) {
-      throw new Error("invalid_expo_push_response");
-    }
-
-    payload.data.forEach((rawTicket, ticketIndex) => {
-      const ticket = rawTicket && typeof rawTicket === "object"
-        ? rawTicket as ExpoPushTicket
-        : {};
-      if (ticket.status === "ok") {
-        acceptedCount += 1;
-        return;
-      }
-
-      rejectedCount += 1;
-      if (ticket.details?.error === "DeviceNotRegistered" && batch[ticketIndex]) {
-        invalidTokenIds.push(batch[ticketIndex].tokenId);
-      }
-    });
-  }
-
-  return { acceptedCount, rejectedCount, invalidTokenIds };
 }
 
 function errorName(error: unknown): string {

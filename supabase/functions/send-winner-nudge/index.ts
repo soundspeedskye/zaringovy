@@ -4,14 +4,16 @@ import { withSupabase } from "@supabase/server";
 import { createClient } from "@supabase/supabase-js";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-const expoPushEndpoint = "https://exp.host/--/api/v2/push/send";
-const expoPushBatchSize = 100;
-const expoPushTokenPattern = /^ExponentPushToken\[[^\]]+\]$/;
+import {
+  isFcmToken,
+  sendFcmMessages,
+  type FcmTokenRow,
+} from "../_shared/fcm.ts";
+
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 type RequestBody = { roomId?: unknown; body?: unknown };
-type DeliveryToken = { id: string; user_id: string; token: string };
-type Ticket = { status?: unknown; details?: { error?: unknown } | null };
+type DeliveryToken = FcmTokenRow & { user_id: string };
 
 export default {
   fetch: withSupabase({ auth: "user" }, async (request, ctx) => {
@@ -45,18 +47,26 @@ export default {
       if (recipients.length === 0) return Response.json({ delivered: 0 });
       const [{ data: profile, error: profileError }, tokens] = await Promise.all([
         ctx.supabaseAdmin.from("profiles").select("nickname").eq("id", userId).single(),
-        findActiveExpoTokens(ctx.supabaseAdmin, recipients),
+        findActiveFcmTokens(ctx.supabaseAdmin, recipients),
       ]);
       if (profileError) throw profileError;
-      const invalidTokenIds = await sendExpoMessages(tokens, `지난 주차 1위의 잔소리`, `${profile.nickname}: ${body}`);
-      if (invalidTokenIds.length) {
+      const delivery = await sendFcmMessages(tokens, {
+        title: "지난 주차 1위의 잔소리",
+        body: profile.nickname + ": " + body,
+        data: { route: "/notifications" },
+      });
+      if (delivery.invalidTokenIds.length) {
         const { error: disableError } = await ctx.supabaseAdmin
           .from("device_push_tokens")
           .update({ is_enabled: false })
-          .in("id", invalidTokenIds);
+          .in("id", delivery.invalidTokenIds);
         if (disableError) throw disableError;
       }
-      return Response.json({ delivered: tokens.length, disabled: invalidTokenIds.length });
+      return Response.json({
+        delivered: delivery.acceptedCount,
+        rejected: delivery.rejectedCount,
+        disabled: delivery.invalidTokenIds.length,
+      });
     } catch (error) {
       console.error("winner_nudge_delivery_failed", { type: errorName(error) });
       // The in-app notifications were committed before delivery. A push failure
@@ -71,40 +81,20 @@ function parseRecipientIds(value: object): string[] {
   return Array.isArray(ids) ? ids.filter((id): id is string => typeof id === "string" && uuidPattern.test(id)) : [];
 }
 
-async function findActiveExpoTokens(admin: SupabaseClient, userIds: string[]): Promise<DeliveryToken[]> {
+async function findActiveFcmTokens(admin: SupabaseClient, userIds: string[]): Promise<DeliveryToken[]> {
   const { data, error } = await admin
     .from("device_push_tokens")
     .select("id,user_id,token")
     .eq("is_enabled", true)
-    .like("token", "ExponentPushToken[%]")
+    .in("platform", ["ios", "android"])
     .in("user_id", userIds);
   if (error) throw error;
-  return ((data ?? []) as DeliveryToken[]).filter((row) => expoPushTokenPattern.test(row.token));
-}
-
-async function sendExpoMessages(tokens: DeliveryToken[], title: string, body: string): Promise<string[]> {
-  const invalidTokenIds: string[] = [];
-  for (let index = 0; index < tokens.length; index += expoPushBatchSize) {
-    const batch = tokens.slice(index, index + expoPushBatchSize);
-    const response = await fetch(expoPushEndpoint, {
-      method: "POST",
-      headers: { accept: "application/json", "content-type": "application/json" },
-      body: JSON.stringify(batch.map(({ token }) => ({ to: token, sound: "default", title, body, data: { route: "/notifications" } }))),
-    });
-    if (!response.ok) throw new Error(`expo_push_http_${response.status}`);
-    const payload = await response.json() as { data?: unknown };
-    if (!Array.isArray(payload.data) || payload.data.length !== batch.length) throw new Error("invalid_expo_response");
-    payload.data.forEach((raw, ticketIndex) => {
-      const ticket = raw as Ticket;
-      if (ticket.status !== "ok" && ticket.details?.error === "DeviceNotRegistered") invalidTokenIds.push(batch[ticketIndex].id);
-    });
-  }
-  return invalidTokenIds;
+  return ((data ?? []) as DeliveryToken[]).filter(({ token }) => isFcmToken(token));
 }
 
 function requiredEnv(name: string): string {
   const value = Deno.env.get(name);
-  if (!value) throw new Error(`${name} is not configured`);
+  if (!value) throw new Error(name + " is not configured");
   return value;
 }
 

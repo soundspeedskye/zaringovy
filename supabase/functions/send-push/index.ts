@@ -3,10 +3,13 @@ import "@supabase/functions-js/edge-runtime.d.ts";
 import { withSupabase } from "@supabase/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-const expoPushEndpoint = "https://exp.host/--/api/v2/push/send";
-const expoPushBatchSize = 100;
+import {
+  isFcmToken,
+  sendFcmMessages,
+  type FcmTokenRow,
+} from "../_shared/fcm.ts";
+
 const tokenPageSize = 1000;
-const expoPushTokenPattern = /^ExponentPushToken\[[^\]]+\]$/;
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 type SendPushRequest = {
@@ -23,13 +26,6 @@ type ValidPushRequest = {
   title: string;
   body: string;
   data?: Record<string, string>;
-};
-
-type PushTokenRow = { id: string; token: string };
-type ExpoPushTicket = {
-  status?: unknown;
-  id?: unknown;
-  details?: { error?: unknown } | null;
 };
 
 /**
@@ -49,8 +45,12 @@ export default {
     }
 
     try {
-      const tokens = await findActiveExpoTokens(ctx.supabaseAdmin, parsed.value);
-      const delivery = await sendExpoMessages(tokens, parsed.value);
+      const tokens = await findActiveFcmTokens(ctx.supabaseAdmin, parsed.value);
+      const delivery = await sendFcmMessages(tokens, {
+        title: parsed.value.title,
+        body: parsed.value.body,
+        ...(parsed.value.data ? { data: parsed.value.data } : {}),
+      });
 
       if (delivery.invalidTokenIds.length > 0) {
         const { error } = await ctx.supabaseAdmin
@@ -63,17 +63,17 @@ export default {
       console.log("push_delivery_completed", {
         audience: parsed.value.audience,
         targetCount: tokens.length,
-        acceptedCount: delivery.ticketIds.length,
+        acceptedCount: delivery.acceptedCount,
         rejectedCount: delivery.rejectedCount,
         disabledCount: delivery.invalidTokenIds.length,
       });
 
       return Response.json({
         attempted: tokens.length,
-        accepted: delivery.ticketIds.length,
+        accepted: delivery.acceptedCount,
         rejected: delivery.rejectedCount,
         disabled: delivery.invalidTokenIds.length,
-        ticketIds: delivery.ticketIds,
+        messageNames: delivery.messageNames,
       });
     } catch (error) {
       console.error("push_delivery_failed", { type: errorName(error) });
@@ -144,11 +144,11 @@ function isSupportedRoute(route: string): boolean {
     || /^\/community\/[^/]+$/.test(route);
 }
 
-async function findActiveExpoTokens(
+async function findActiveFcmTokens(
   admin: SupabaseClient,
   request: ValidPushRequest,
-): Promise<PushTokenRow[]> {
-  const rows: PushTokenRow[] = [];
+): Promise<FcmTokenRow[]> {
+  const rows: FcmTokenRow[] = [];
   let from = 0;
 
   while (true) {
@@ -156,67 +156,18 @@ async function findActiveExpoTokens(
       .from("device_push_tokens")
       .select("id, token")
       .eq("is_enabled", true)
-      .like("token", "ExponentPushToken[%]")
+      .in("platform", ["ios", "android"])
       .range(from, from + tokenPageSize - 1);
     if (request.audience === "user") query = query.eq("user_id", request.userId!);
 
     const { data, error } = await query;
     if (error) throw error;
 
-    const page = (data ?? []) as PushTokenRow[];
-    rows.push(...page.filter(({ token }) => expoPushTokenPattern.test(token)));
+    const page = (data ?? []) as FcmTokenRow[];
+    rows.push(...page.filter(({ token }) => isFcmToken(token)));
     if (page.length < tokenPageSize) return rows;
     from += tokenPageSize;
   }
-}
-
-async function sendExpoMessages(tokens: PushTokenRow[], request: ValidPushRequest): Promise<{
-  ticketIds: string[];
-  invalidTokenIds: string[];
-  rejectedCount: number;
-}> {
-  const ticketIds: string[] = [];
-  const invalidTokenIds: string[] = [];
-  let rejectedCount = 0;
-
-  for (let index = 0; index < tokens.length; index += expoPushBatchSize) {
-    const batch = tokens.slice(index, index + expoPushBatchSize);
-    const response = await fetch(expoPushEndpoint, {
-      method: "POST",
-      headers: {
-        accept: "application/json",
-        "content-type": "application/json",
-      },
-      body: JSON.stringify(batch.map(({ token }) => ({
-        to: token,
-        sound: "default",
-        title: request.title,
-        body: request.body,
-        ...(request.data ? { data: request.data } : {}),
-      }))),
-    });
-    if (!response.ok) throw new Error(`expo_push_http_${response.status}`);
-
-    const body = await response.json() as { data?: unknown };
-    if (!Array.isArray(body.data) || body.data.length !== batch.length) {
-      throw new Error("invalid_expo_push_response");
-    }
-
-    for (const [ticketIndex, rawTicket] of body.data.entries()) {
-      const ticket = rawTicket as ExpoPushTicket;
-      if (ticket.status === "ok" && typeof ticket.id === "string") {
-        ticketIds.push(ticket.id);
-        continue;
-      }
-
-      rejectedCount += 1;
-      if (ticket.details?.error === "DeviceNotRegistered" && batch[ticketIndex]) {
-        invalidTokenIds.push(batch[ticketIndex].id);
-      }
-    }
-  }
-
-  return { ticketIds, invalidTokenIds, rejectedCount };
 }
 
 function errorName(error: unknown): string {
