@@ -1,9 +1,9 @@
 # 앱 푸시 적용·운영 가이드
 
-- 문서 상태: iOS 1차 구현 + 24시간 활동 리마인더 코드 완료
-- 최종 반영: 2026-09-11
-- 대상: iOS / Expo Push Service / Supabase Edge Functions
-- 현재 iOS OTA 그룹: `8c4068d7-18b3-4b25-8fa6-d852995ff89e`
+- 문서 상태: iOS·Android FCM 직접 발송 및 Supabase 반영 완료
+- 최종 반영: 2026-09-12
+- 대상: Android·iOS / Firebase FCM HTTP v1 / Supabase Edge Functions
+- 네이티브 변경: 새 EAS development/release build 필요 (OTA만으로는 적용되지 않음)
 
 이 문서는 자린고비 앱의 원격 푸시가 어떤 구조로 동작하는지, 이후 자동·전체·예약 발송을 어디에 연결해야 하는지를 정리한다. 실제 Push Token, APNs `.p8` 키, Supabase secret key는 이 문서나 Git에 기록하지 않는다.
 
@@ -11,39 +11,40 @@
 
 | 항목 | 상태 | 설명 |
 |---|---|---|
-| iOS APNs 자격증명 | 완료 | EAS 원격 credentials에 연결됨 |
-| 앱 알림 권한·Expo 토큰 등록 | 완료 | 로그인한 iOS 사용자만 등록 |
-| 기기별 토큰 갱신 | 완료 | iOS IDFV를 `device_id`에 저장 |
-| 토큰 데이터 정리 | 완료 | 원시 APNs 토큰 제거, 이전 Expo 토큰 비활성화 |
-| 수동 수신 테스트 | 완료 | Expo Push Tool로 실기기 수신 확인 |
-| 내부 발송 Function | 완료 | `send-push` Edge Function 배포·활성화 |
+| Firebase APNs 자격증명 | 사용자 설정 완료 | Firebase Console에 APNs `.p8` 업로드 |
+| 앱 알림 권한·FCM 토큰 등록 | 코드 완료 | 로그인한 Android·iOS 사용자 등록 |
+| 기기별 토큰 갱신 | 코드 완료 | iOS IDFV / Android ID를 `device_id`에 저장 |
+| 토큰 데이터 정리 | 코드 완료 | 만료·무효 FCM 토큰 자동 비활성화 |
+| 수동 수신 테스트 | 새 네이티브 빌드 후 필요 | Android·iOS 실기기에서 FCM 수신 확인 |
+| 내부 발송 Function | 배포 완료 | FCM Secret 설정 후 네 개 Function 원격 배포 완료 |
 | 특정 사용자·전체 발송 | 준비 완료 | 내부 서비스 또는 크론이 Function을 호출 |
 | 지난 주차 1위 잔소리 | 완료 | 정산 결과 기반 발송권·소식함·기기 푸시까지 연결 |
 | 방 공지 자동 푸시 | 완료 | 공지 소식함 행을 기준으로 같은 방 수신자 기기에 전달 |
 | 24시간 활동 리마인더 | 구현 완료 | 앱 미접속·게시글 미작성 상태를 DB에서 판정해 KST 09:00~21:00에 1회 전송 |
 | 댓글·답글 자동 푸시 | 미구현 | `notifications` 이벤트 dispatcher를 별도 연결 예정 |
 | 푸시 탭 이동 | 완료 | 모든 원격 푸시를 앱 홈으로 이동 |
-| Android FCM | 미구현 | Android 작업 시 Firebase FCM v1 설정 필요 |
+| Android FCM | 원격 반영 완료·새 build 필요 | `google-services.json` 확인 완료, 새 Android build 필요 |
 
 ## 2. 전체 구조
 
 ```mermaid
 flowchart LR
-    A[iOS 앱 로그인] --> B[알림 권한 확인]
-    B --> C[ExpoPushToken 발급]
+    A[Android·iOS 앱 로그인] --> B[알림 권한 확인]
+    B --> C[Firebase FCM 토큰 발급]
     C --> D[Supabase device_push_tokens 저장]
     E[댓글·공지·예약 등 내부 이벤트] --> F[send-push Edge Function]
     L[주차 정산 결과] --> M[잔소리 발송권 생성]
     M --> N[send-winner-nudge Edge Function]
-    F --> G[활성 Expo 토큰 조회]
-    G --> H[Expo Push API]
-    H --> I[APNs]
+    F --> G[활성 FCM 토큰 조회]
     N --> G
-    I --> J[iOS 기기 알림]
-    J --> K[알림 탭 시 앱 홈으로 이동]
+    G --> H[Firebase OAuth 서비스 계정]
+    H --> I[FCM HTTP v1]
+    I --> J[Android 또는 APNs]
+    J --> K[기기 알림]
+    K --> R[알림 탭 시 앱 홈으로 이동]
 ```
 
-발송 서버는 APNs에 직접 연결하지 않는다. `send-push`가 Expo Push API로 Expo Push Token을 보내면, Expo가 iOS는 APNs로 전달한다. Android를 추가할 때도 앱과 서버의 발송 인터페이스는 유지하고 Expo가 FCM으로 전달한다.
+발송 서버는 Firebase 서비스 계정으로 FCM HTTP v1을 호출한다. FCM이 Android에는 직접 전달하고, iOS에는 Firebase에 등록한 APNs 자격증명을 사용해 APNs로 전달하므로 두 플랫폼을 같은 발송 함수에서 처리한다.
 
 ## 3. 앱의 토큰 등록 흐름
 
@@ -55,33 +56,33 @@ flowchart LR
 
 ### 3.1 등록 조건
 
-1. iOS 기기에서 앱을 실행한다.
+1. Android 또는 iOS 네이티브 기기에서 앱을 실행한다.
 2. 사용자가 로그인한다.
 3. 앱이 알림 권한을 확인하고, 필요하면 시스템 권한 팝업을 표시한다.
-4. 허용된 경우에만 `getExpoPushTokenAsync()`로 `ExponentPushToken[...]` 값을 얻는다.
-5. iOS IDFV를 읽어 `ios:<IDFV>` 형식의 `device_id`를 만든다.
+4. 허용된 경우에만 Firebase Messaging의 `getToken()`으로 FCM 등록 토큰을 얻는다.
+5. iOS IDFV 또는 Android ID를 읽어 `ios:<IDFV>` / `android:<Android ID>` 형식의 `device_id`를 만든다.
 6. `claim_device_push_token` RPC가 토큰을 현재 로그인 계정으로 연결한다. 같은 iPhone에서 계정을 바꾸면 이전 계정 연결을 끊고 새 계정으로 이전한다.
 
-IDFV가 iOS 재시작 직후 잠금 상태 등으로 일시적으로 `null`이면 저장을 건너뛰고 다음 앱 실행에서 재시도한다. 기기 토큰이 앱 실행 중 바뀌는 경우에도 push token listener가 같은 저장 함수를 다시 호출한다.
+기기 식별자를 일시적으로 가져오지 못하면 저장을 건너뛰고 다음 앱 실행에서 재시도한다. FCM 토큰이 앱 실행 중 바뀌는 경우에도 `onTokenRefresh`가 같은 저장 함수를 다시 호출한다.
 
 ### 3.2 왜 token이 아니라 device_id를 기준으로 갱신하는가
 
-Expo Push Token은 재설치, APNs Sandbox/Production 전환, 제공자 측 토큰 갱신으로 바뀔 수 있다. 토큰 자체를 행의 식별자로 쓰면 동일 기기에 과거 토큰이 계속 쌓인다.
+FCM 토큰은 재설치, 앱 데이터 삭제, 제공자 측 토큰 갱신으로 바뀔 수 있다. 토큰 자체를 행의 식별자로 쓰면 동일 기기에 과거 토큰이 계속 쌓인다.
 
 `device_id`를 기준으로 현재 토큰을 update하면 다음 상태를 유지한다.
 
 ```text
-동일 사용자 + 동일 iPhone + iOS = 활성 토큰 행 1개
-동일 사용자 + 다른 iPhone            = 각각 활성 토큰 행 1개
+동일 사용자 + 동일 기기 + 플랫폼 = 활성 토큰 행 1개
+동일 사용자 + 다른 기기          = 각각 활성 토큰 행 1개
 ```
 
-기존 앱 버전이 `device_id = null`로 저장한 현재 Expo 토큰은, 새 코드가 처음 실행될 때 같은 행에 `device_id`를 채워 이관한다. 비활성화된 과거 행은 `device_id = null`이어도 발송 대상이 아니므로 즉시 삭제할 필요는 없다.
+기존 앱 버전의 Expo 토큰 행은 새 FCM 발송 대상에서 제외된다. 같은 기기에서 새 FCM 토큰을 등록하면 RPC가 기존의 동일 기기 행을 정리하며, `device_id = null`인 과거 행은 발송 대상이 아니므로 즉시 삭제할 필요는 없다.
 
-한 iPhone에서 본계정과 테스트계정을 번갈아 로그인하는 경우에도 Expo 토큰 자체는 바뀌지 않을 수 있다. 이때 RPC가 토큰의 `user_id`만 현재 계정으로 이전하므로, 기기 알림은 현재 로그인한 계정에 대해서만 수신한다.
+한 기기에서 본계정과 테스트계정을 번갈아 로그인하는 경우에도 FCM 토큰 자체는 바뀌지 않을 수 있다. 이때 RPC가 토큰의 `user_id`만 현재 계정으로 이전하므로, 기기 알림은 현재 로그인한 계정에 대해서만 수신한다.
 
 ### 3.3 로그아웃과 탈퇴
 
-- 로그아웃: 현재 기기의 현재 Expo 토큰만 `is_enabled = false`로 바꾼다. 다른 기기의 토큰은 유지한다.
+- 로그아웃: 현재 기기의 현재 FCM 토큰만 `is_enabled = false`로 바꾼다. 다른 기기의 토큰은 유지한다.
 - 계정 탈퇴: 기존 `delete-account` Function이 `device_push_tokens` 행도 삭제한다.
 
 ## 4. `device_push_tokens` 데이터 규칙
@@ -91,13 +92,13 @@ Expo Push Token은 재설치, APNs Sandbox/Production 전환, 제공자 측 토�
 | 열 | 의미 | 운영 규칙 |
 |---|---|---|
 | `user_id` | 수신자 계정 | 앱 사용자는 자신의 행만 접근 |
-| `platform` | `ios` 또는 향후 `android` | 발송 플랫폼 구분 |
-| `token` | Expo Push Token | `ExponentPushToken[...]`만 Expo 발송 대상 |
-| `device_id` | `ios:<IDFV>` | 같은 기기 행을 갱신하는 기준 |
+| `platform` | `ios` 또는 `android` | 발송 플랫폼 구분 |
+| `token` | Firebase FCM Token | 옛 `ExponentPushToken[...]`은 발송 대상에서 제외 |
+| `device_id` | `ios:<IDFV>` 또는 `android:<Android ID>` | 같은 기기 행을 갱신하는 기준 |
 | `is_enabled` | 수신 가능 여부 | `true`인 행만 발송 |
 | `last_seen_at` | 마지막 등록 시각 | 토큰 상태 점검에 사용 |
 
-DB에는 `(user_id, platform, device_id)` 유니크 인덱스가 있다. `device_id`가 `null`인 과거 행은 SQL의 `NULL` 특성상 여러 개 존재할 수 있으므로, 새 앱 코드는 항상 IDFV를 채워 저장한다.
+DB에는 `(user_id, platform, device_id)` 유니크 인덱스가 있다. `device_id`가 `null`인 과거 행은 SQL의 `NULL` 특성상 여러 개 존재할 수 있으므로, 새 앱 코드는 항상 플랫폼별 기기 식별자를 채워 저장한다.
 
 ### 4.1 운영 점검 SQL
 
@@ -112,11 +113,11 @@ select
   last_seen_at
 from public.device_push_tokens
 where is_enabled = true
-  and token like 'ExponentPushToken[%]'
+  and token not like 'ExponentPushToken[%]'
 order by last_seen_at desc;
 ```
 
-실기기에서 새 OTA를 받은 뒤에는 활성 행의 `device_id`가 `ios:`로 시작해야 한다.
+실기기에서 새 네이티브 빌드를 설치한 뒤에는 활성 행의 `device_id`가 `ios:` 또는 `android:`로 시작해야 한다.
 
 ```sql
 select token, device_id, is_enabled, last_seen_at
@@ -133,7 +134,7 @@ order by last_seen_at desc;
 - `supabase/functions/send-push/deno.json`
 - `supabase/config.toml`
 
-운영 Supabase에는 `send-push` Function이 배포되어 활성 상태다.
+운영 Supabase에는 `send-push` Function 설정과 FCM Secret이 유지되며, FCM 직접 발송 코드가 원격에 배포되어 있다.
 
 ### 5.1 호출 권한
 
@@ -182,11 +183,11 @@ Function은 다음을 모두 만족하는 토큰만 조회한다.
 
 ```text
 is_enabled = true
-token LIKE 'ExponentPushToken[%]'
-정규식으로 Expo 토큰 형식 재검증
+platform IN ('ios', 'android')
+공백이 없고 옛 ExponentPushToken 접두사가 아닌 FCM 토큰
 ```
 
-원시 APNs 16진수 토큰은 Expo Push API에 전송되지 않는다. 발송은 Expo 제한에 맞춰 요청당 100개씩 분할한다.
+FCM HTTP v1은 토큰별 단건 요청을 사용하며, Function은 한 번에 20개씩 병렬 처리한다. 인증·프로젝트 오류는 재시도를 위해 실패로 반환하고, FCM이 무효로 판정한 토큰만 자동 비활성화한다.
 
 기존 발송 API의 payload 경로 데이터는 호환성을 위해 제한해서 받지만, 현재 앱은 어떤 payload든 탭하면 홈으로 이동한다.
 
@@ -202,26 +203,25 @@ token LIKE 'ExponentPushToken[%]'
 
 ### 5.4 발송 결과와 토큰 비활성화
 
-Expo의 즉시 응답에서 `DeviceNotRegistered`가 오면 해당 행을 `is_enabled = false`로 바꾼다. 앱 삭제, 권한 철회처럼 비동기 전달 결과에 의한 실패까지 엄밀히 반영하려면 다음 확장 단계에서 Expo ticket ID를 별도 테이블에 저장하고 Push Receipt API를 조회하는 worker를 추가한다.
+FCM 응답의 `UNREGISTERED` 또는 토큰에 대한 `INVALID_ARGUMENT`가 오면 해당 행을 `is_enabled = false`로 바꾼다. 성공 응답의 `name`은 진단용 `messageNames`로 반환하며 Expo ticket/receipt 조회는 사용하지 않는다.
 
 ## 6. 테스트 절차
 
 ### 6.1 앱 토큰 등록 확인
 
-1. TestFlight의 iOS `1.0.3` 빌드를 연다.
-2. 한 번 실행해 OTA를 받고, 앱을 종료·재실행해 OTA를 적용한다.
-3. 로그인하고 알림 권한을 허용한다.
-4. SQL Editor에서 활성 행의 `device_id`가 `ios:`로 시작하는지 확인한다.
+1. 새 EAS development 또는 release build를 Android·iOS 실기기에 설치한다.
+2. 로그인하고 알림 권한을 허용한다.
+3. SQL Editor에서 활성 행의 `platform`, `device_id`, `last_seen_at`을 확인한다.
 
 ### 6.2 수동 수신 확인
 
-개발 초기에는 Expo Push Tool에 활성 `ExponentPushToken[...]` 하나를 넣어 수신을 확인한다. 앱이 열린 상태, 백그라운드 상태, 종료 상태에서 각각 알림 표시와 탭 후 화면 이동을 점검한다.
+`send-push`를 project secret으로 호출해 한 사용자에게 테스트한다. Android·iOS 각각 포그라운드, 백그라운드, 종료 상태에서 알림 표시와 탭 후 홈 이동을 점검한다.
 
 ### 6.3 Function 호출 확인
 
 Function은 secret key가 있는 내부 호출자만 사용할 수 있다. 특정 사용자 테스트는 `audience: "user"`로 한 명에게만 보낸 뒤 응답의 `attempted`, `accepted`, `rejected`, `disabled` 값을 확인한다.
 
-`accepted`는 Expo가 요청을 접수했다는 의미다. 실제 APNs 전달까지 확인하려면 기기 수신을 확인하거나 향후 Receipt worker를 추가한다.
+`accepted`는 FCM이 메시지를 접수했다는 의미다. 실제 기기 전달은 Android·iOS 수신 여부로 확인한다.
 
 ### 6.4 방 공지 자동 푸시 확인
 
@@ -255,7 +255,7 @@ flowchart LR
     D --> E[send-winner-nudge 호출]
     E --> F[서버에서 횟수·30분·수신자 재검증]
     F --> G[notifications에 수신자별 소식 생성]
-    G --> H[활성 Expo 토큰에 기기 푸시]
+    G --> H[활성 FCM 토큰에 기기 푸시]
 ```
 
 관련 파일:
@@ -267,7 +267,7 @@ flowchart LR
 
 정산 트리거가 `winner_nudge_grants`를 만들며, RLS로 우승자 본인만 읽을 수 있다. 이 테이블은 Realtime publication에 포함돼 정산 후 앱을 열어 둔 우승자에게도 버튼이 나타난다.
 
-`send-winner-nudge`는 로그인한 사용자 요청만 받는다. DB RPC에서 현재 사용자·방·만료일·횟수·쿨다운을 잠금과 함께 검증한 뒤 소식함 행을 먼저 저장한다. 그 뒤 Expo 전송이 실패해도 이미 저장한 소식은 유지해 재시도로 중복 발송되지 않게 한다. `DeviceNotRegistered` 응답의 토큰은 자동 비활성화한다.
+`send-winner-nudge`는 로그인한 사용자 요청만 받는다. DB RPC에서 현재 사용자·방·만료일·횟수·쿨다운을 잠금과 함께 검증한 뒤 소식함 행을 먼저 저장한다. 그 뒤 FCM 전송이 실패해도 이미 저장한 소식은 유지해 재시도로 중복 발송되지 않게 한다. 무효 FCM 토큰은 자동 비활성화한다.
 
 ### 7.3 기기 테스트 순서
 
@@ -280,38 +280,34 @@ flowchart LR
 
 ## 8. 24시간 활동 리마인더
 
-활성 방 멤버 중에서 전역·방별 알림을 허용하고, 활성 Expo 토큰이 있는 사용자만 대상이다. 앱을 열거나 게시글·투표를 작성하면 활동 기준 시각이 갱신된다. 두 활동 모두 24시간 이상 없을 때 KST 09:00~21:00 사이에 한 번만 원격 푸시를 보낸다. 푸시를 탭하면 payload와 관계없이 홈으로 이동한다.
+활성 방 멤버 중에서 전역·방별 알림을 허용하고, 활성 FCM 토큰이 있는 사용자만 대상이다. 앱을 열거나 게시글·투표를 작성하면 활동 기준 시각이 갱신된다. 두 활동 모두 24시간 이상 없을 때 KST 09:00~21:00 사이에 한 번만 원격 푸시를 보낸다. 푸시를 탭하면 payload와 관계없이 홈으로 이동한다.
 
 관련 파일:
 
-- `supabase/migrations/20260911012815_engagement_reminders.sql`
+- `supabase/migrations/20260912065845_engagement_reminders.sql`
 - `supabase/functions/deliver-engagement-nudges/index.ts`
 - `src/shared/services/engagement-activity.ts`
 - `src/shared/providers/push-notification-provider.tsx`
 
-`private.user_engagement_state`가 마지막 앱 활동·게시글 시각을 보관하고, `private.engagement_nudge_events`가 중복 방지·선점·발송 상태를 보관한다. Supabase Cron이 5분마다 대상자를 선점한 뒤 `deliver-engagement-nudges`가 Expo Push API를 호출한다. DB 트랜잭션 안에서 외부 HTTP를 호출하지 않으며, worker가 큐를 가져간 뒤 토큰별로 전송한다.
+`private.user_engagement_state`가 마지막 앱 활동·게시글 시각을 보관하고, `private.engagement_nudge_events`가 중복 방지·선점·발송 상태를 보관한다. Supabase Cron이 5분마다 대상자를 선점한 뒤 `deliver-engagement-nudges`가 FCM HTTP v1을 호출한다. DB 트랜잭션 안에서 외부 HTTP를 호출하지 않으며, worker가 큐를 가져간 뒤 토큰별로 전송한다.
 
-기존 방 공지와 동일하게 Vault의 `room_notice_push_api_key`를 사용한다. 운영 DB에 migration을 반영하고 Function을 배포하면 Cron이 자동으로 동작한다. 기존 사용자에게는 migration 시각부터 24시간의 유예가 있다.
+기존 방 공지와 동일하게 Vault의 `room_notice_push_api_key`를 사용한다. 운영 DB migration과 `deliver-engagement-nudges` 배포가 완료되어 Cron이 동작한다. 기존 사용자에게는 migration 시각부터 24시간의 유예가 있다.
 
 ## 9. 배포 규칙
 
 | 변경 | 필요한 배포 |
 |---|---|
 | 화면·토큰 동기화 같은 JS/TS 변경 | EAS Update (OTA) |
-| `expo-notifications` plugin, iOS 권한, 새 네이티브 모듈 변경 | 새 EAS iOS Build + TestFlight 제출 |
-| 일반 Edge Function 코드 변경 | `supabase functions deploy send-push` |
-| 잔소리 발송 Function 코드 변경 | `supabase functions deploy send-winner-nudge` |
-| 24시간 리마인더 Function 코드 변경 | `supabase functions deploy deliver-engagement-nudges` |
+| RNFirebase/`expo-build-properties` plugin, Android·iOS 네이티브 설정 변경 | 새 EAS Android·iOS Build 필요 |
+| 일반 Edge Function 또는 `_shared/fcm.ts` 변경 | 네 개 FCM 발송 Function 재배포 |
 | 스키마/RLS 변경 | migration 생성 후 운영 DB 반영 |
 
 현재 OTA는 `production` 채널·runtime `1.0.3`에 배포되어 있다. OTA는 동일 runtime의 설치 빌드에만 적용된다.
 
 ## 10. 다음 확장 순서
 
-1. **특정 사용자 이벤트**: 댓글·답글·초대 등 이벤트가 생길 때 내부 서버가 `audience: "user"` 호출
-2. **전체 공지**: 관리자 운영 도구가 `audience: "all"` 호출
-3. **영수증 처리**: ticket ID 저장 테이블과 receipt worker를 추가해 죽은 토큰 자동 비활성화 강화
-4. **Android**: Firebase FCM v1 자격증명 설정, Android 기기 식별자 처리, 실기기 수신 테스트
+1. **실기기**: 새 Android·iOS build 설치 후 포그라운드·백그라운드·종료 상태 테스트
+2. **특정 사용자·전체 공지**: 내부 서버가 `audience: "user"` 또는 `audience: "all"` 호출
 
 자동·전체 발송을 앱 클라이언트에서 직접 호출하게 만들지 않는다. 수신자 선택과 권한 판정은 반드시 신뢰할 수 있는 서버 작업에서 수행한다.
 
@@ -320,10 +316,10 @@ flowchart LR
 | 증상 | 확인할 항목 |
 |---|---|
 | 토큰 행이 생성되지 않음 | 로그인 여부, 알림 권한, TestFlight/개발 빌드 사용 여부, 네트워크 |
-| `device_id`가 비어 있음 | 최신 OTA 적용 후 앱 재실행, iPhone 잠금 해제 후 재시도 |
-| 알림이 중복 도착 | 활성 Expo 토큰이 동일 기기에 여러 개인지 확인 |
+| `device_id`가 비어 있음 | 새 네이티브 build 실행, 기기 잠금 해제 후 재시도 |
+| 알림이 중복 도착 | FCM 알림 payload와 별도의 local notification을 동시에 예약하지 않았는지 확인 |
 | Function이 401 | `apikey` 헤더에 project secret key를 사용했는지 확인 |
-| Function이 502 | `service_role`의 푸시용 최소 테이블 권한과 DB webhook의 Vault key 존재 여부 확인 |
+| Function이 502 | `FCM_SERVICE_ACCOUNT_JSON`, Firebase Messaging API, DB webhook의 Vault key 존재 여부 확인 |
 | Function이 400 | `audience`, UUID, 제목·본문 길이, 허용된 `data.route` 확인 |
-| Function 응답은 성공인데 기기 수신 실패 | 앱 권한, APNs credentials, Expo ticket/receipt, 기기 네트워크 확인 |
-| 푸시 탭 후 홈으로 가지 않음 | 최신 OTA 적용 여부와 `PushNotificationProvider`의 응답 listener 확인 |
+| Function 응답은 성공인데 기기 수신 실패 | 앱 권한, Firebase의 APNs key, `google-services.json`, 기기 네트워크 확인 |
+| 푸시 탭 후 홈으로 가지 않음 | 새 build 적용 여부와 `PushNotificationProvider`의 FCM listener 확인 |

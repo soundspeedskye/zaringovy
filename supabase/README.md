@@ -180,8 +180,9 @@ a local stack with `supabase db reset` followed by `psql -f`.
   `/challenges/{id}/expenses/{id}`. Comment text is never copied into them.
 - Clients subscribe to `notifications` over Realtime, filter by `user_id`, and
   may update only `read_at`.
-- Time-boundary/limit notifications and APNs/FCM delivery workers remain a
-  deployment follow-up; the enum and token registry already reserve them.
+- Time-boundary/limit notifications and FCM delivery workers are implemented in
+  the mobile repository; the production project now has the FCM migration,
+  Secret, and Edge Function deployments described in the push operations guide.
 
 ## Holiday ingestion
 
