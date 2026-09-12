@@ -1,0 +1,71 @@
+# Keep shared exclusions aligned with .gitignore.
+# Firebase app configuration exceptions must remain at the end.
+
+# Operating system files
+.DS_Store
+Thumbs.db
+
+# Editor and local tool state
+.idea/
+*.swp
+*.swo
+*~
+**/.claude/
+
+# Local environment and credentials
+**/.env
+**/.env.*
+!**/.env.example
+*.jks
+*.keystore
+*.p8
+*.p12
+*.pem
+*.key
+*.mobileprovision
+google-services.json
+GoogleService-Info.plist
+*firebase-adminsdk*.json
+
+# Dependencies
+**/node_modules/
+.pnpm-store/
+.yarn/cache/
+
+# Logs and caches
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+**/.cache/
+**/.eslintcache
+**/*.tsbuildinfo
+**/.metro-health-check*
+
+# Expo and JavaScript build output
+**/.expo/
+**/dist/
+**/web-build/
+**/coverage/
+**/expo-env.d.ts
+expo-env.d.ts
+
+# Expo prebuild output
+/ios/
+/android/
+
+# Local screenshots and QA artifacts
+/artifacts/
+
+# Personal reference notes (not tracked)
+*.local.md
+/docs/00-collaboration-rules.local.md
+
+# Supabase local state
+supabase/.branches/
+supabase/.temp/
+supabase/volumes/
+
+# Include only the root Firebase app configuration files needed for native builds.
+!/google-services.json
+!/GoogleService-Info.plist
