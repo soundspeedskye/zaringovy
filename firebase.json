@@ -1,0 +1,11 @@
+{
+  "react-native": {
+    "messaging_android_notification_channel_id": "challenge-events",
+    "messaging_android_notification_delegation_enabled": false,
+    "messaging_ios_foreground_presentation_options": [
+      "sound",
+      "list",
+      "banner"
+    ]
+  }
+}

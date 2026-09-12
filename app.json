@@ -10,6 +10,7 @@
     "ios": {
       "icon": "./assets/images/icon.png",
       "bundleIdentifier": "com.zaringovy.app",
+      "googleServicesFile": "./GoogleService-Info.plist",
       "supportsTablet": false,
       "infoPlist": {
         "NSCameraUsageDescription": "지출 또는 프로필 사진을 촬영하기 위해 카메라를 사용합니다.",
@@ -19,6 +20,7 @@
     },
     "android": {
       "package": "com.zaringovy.app",
+      "googleServicesFile": "./google-services.json",
       "softwareKeyboardLayoutMode": "resize",
       "adaptiveIcon": {
         "backgroundColor": "#FDF6E3",
@@ -56,6 +58,16 @@
           "icon": "./assets/images/android-icon-monochrome.png",
           "color": "#2F715D",
           "defaultChannel": "challenge-events"
+        }
+      ],
+      "@react-native-firebase/app",
+      "@react-native-firebase/messaging",
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "useFrameworks": "dynamic"
+          }
         }
       ]
     ],

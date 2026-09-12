@@ -22,6 +22,7 @@ Thumbs.db
 *.mobileprovision
 google-services.json
 GoogleService-Info.plist
+*firebase-adminsdk*.json
 
 # Dependencies
 **/node_modules/
