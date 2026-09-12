@@ -55,6 +55,7 @@ yarn-error.log*
 
 # Personal reference notes (not tracked)
 *.local.md
+/docs/00-collaboration-rules.local.md
 
 # Supabase local state
 supabase/.branches/
